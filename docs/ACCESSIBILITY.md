@@ -197,7 +197,7 @@ dropped. Never move parsed nodes into the page (`adoptNode`/`append` of DOMParse
 10. **Backbone contrast.** `.scr-faded` draws the text color at 80% over the wash
     (`-webkit-text-fill-color`, not opacity), which keeps ≥ 4.5:1 on every theme's wash with every
     palette color. Under prefers-reduced-motion, loading shows a static dashed outline instead of a pulse.
-11. **Read aloud** (`speech.js`). `speechSynthesis`, one utterance per sentence (this avoids
+11. **Read aloud** (`speech.js`). One sentence at a time through `chrome.tts` (spoken by background.js, because a page's own `speechSynthesis` is blocked until the reader clicks the page) (this avoids
     Chrome's ~15s cutoff). With scope=highlights the queue is the highlight sentences in
     document order (in the current root); with scope=article it's every block split into
     sentences (`Intl.Segmenter` with sentence granularity, falling back to a regex). The

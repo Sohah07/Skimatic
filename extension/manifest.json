@@ -8,7 +8,8 @@
     "sidePanel",
     "storage",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "tts"
   ],
   "host_permissions": [
     "http://localhost:8000/*"

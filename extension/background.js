@@ -277,9 +277,62 @@ const panelHandlers = {
   AUTO_APPLY: (msg) => setAutoApply(msg.on === true),
 };
 
+// ---------- Read aloud through Chrome's own speech engine ----------
+// A web page may only speak after the reader clicked on it (Chrome reports
+// "not-allowed" otherwise, which broke read-aloud started from the side panel).
+// chrome.tts belongs to the extension, so it has no such rule. The content
+// script still decides what to read and outlines it; we only speak.
+const TTS_MAX_CHARS = 2000; // one sentence; anything longer is cut, never refused
+let ttsTabId = null;        // the tab whose sentence is being spoken
+
+async function voiceNameFor(wanted) {
+  if (typeof wanted !== "string" || !wanted) return undefined;
+  const voices = await new Promise((res) => chrome.tts.getVoices((v) => res(v || [])));
+  const match = voices.find((v) => v.voiceName === wanted);
+  return match ? match.voiceName : undefined; // unknown voice: use the default
+}
+
+// Resolves when the sentence ends: {ended} | {interrupted} | {error}.
+async function ttsSpeak(msg, sender) {
+  const text = typeof msg.text === "string" ? msg.text.slice(0, TTS_MAX_CHARS) : "";
+  if (!text.trim()) return { ended: true };
+  const rate = Math.min(2, Math.max(0.5, Number(msg.rate) || 1));
+  const voiceName = await voiceNameFor(msg.voice);
+  ttsTabId = sender.tab.id;
+  return new Promise((resolve) => {
+    const options = {
+      rate,
+      enqueue: false, // a new sentence replaces the old one ("interrupted" for the old)
+      onEvent: (e) => {
+        if (e.type === "end") resolve({ ended: true });
+        else if (e.type === "interrupted" || e.type === "cancelled") resolve({ interrupted: true });
+        else if (e.type === "error") resolve({ error: e.errorMessage || "speech error" });
+      },
+    };
+    if (voiceName) options.voiceName = voiceName;
+    chrome.tts.speak(text, options, () => {
+      if (chrome.runtime.lastError) resolve({ error: chrome.runtime.lastError.message });
+    });
+  });
+}
+
+function ttsStop(_msg, sender) {
+  // Only the tab that is speaking may silence it.
+  if (sender && sender.tab && sender.tab.id === ttsTabId) chrome.tts.stop();
+  return { ok: true };
+}
+
+// Stop talking when the reader closes or leaves that tab.
+chrome.tabs.onRemoved.addListener((tabId) => { if (tabId === ttsTabId) chrome.tts.stop(); });
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (tabId === ttsTabId && info.status === "loading") chrome.tts.stop();
+});
+
 // Messages our content scripts may send (about their own tab only).
 const contentHandlers = {
   SIMPLIFY: simplify,
+  TTS_SPEAK: ttsSpeak,
+  TTS_STOP: ttsStop,
 };
 
 const PANEL_URL = chrome.runtime.getURL("sidepanel/sidepanel.html");

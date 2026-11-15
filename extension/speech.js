@@ -1,4 +1,7 @@
-// Read aloud, sentence by sentence, with the browser's built-in speechSynthesis.
+// Read aloud, sentence by sentence. The speaking itself is done by the
+// background script with chrome.tts (Chrome's speech engine for extensions):
+// a web page may only use speechSynthesis after the reader clicked on it, so
+// read-aloud started from the side panel used to fail with "not-allowed".
 // Builds on self.SCR_PAGE from content.js. Spec: docs/ACCESSIBILITY.md, item 11.
 //
 // Why one utterance per sentence? Chrome silently stops long utterances after
@@ -10,16 +13,17 @@
   self.__scrSpeechLoaded = true;
 
   const P = self.SCR_PAGE;
-  // Looked up on every use rather than saved once, so a test can swap in a fake.
-  const synth = () => self.speechSynthesis;
+  const speakViaExtension = (text) =>
+    chrome.runtime.sendMessage({ type: "TTS_SPEAK", text, rate, voice: voiceURI });
+  const silence = () => chrome.runtime.sendMessage({ type: "TTS_STOP" }).catch(() => {});
 
   let queue = [];          // [{ text, marks: [<mark>] | null, block: Element | null }]
   let index = 0;           // which sentence (0-based)
   let state = "stopped";   // "playing" | "paused" | "stopped"
   let rate = 1;
   let voiceURI = "";
-  // Every utterance gets a ticket. Cancelling one still fires its "end" event in
-  // Chrome, so we only react to events from the newest ticket.
+  // Every sentence gets a ticket. A replaced or cancelled sentence still reports
+  // back, so we only react to answers for the newest ticket.
   let ticket = 0;
 
   // ---------- Building the queue ----------
@@ -70,6 +74,7 @@
 
   function showItem(item) {
     clearOutline();
+    if (!item) return; // nothing left to show (reading was stopped meanwhile)
     const targets = item.marks || (item.block ? [item.block] : []);
     targets.forEach((el) => el.classList.add("scr-speaking"));
     if (item.block && P.isFocusMode && P.isFocusMode()) P.setActiveBlock(item.block);
@@ -91,56 +96,34 @@
     P.notifyPanel({ type: "SPEECH_STATE", ...getSpeechState(), ...(error ? { error } : {}) });
   }
 
-  // What to tell the reader when the browser's voice fails.
-  function errorText(code) {
-    if (code === "not-allowed") return "Chrome blocked the voice. Click once on the page, then press Read aloud again.";
-    if (code === "voice-unavailable" || code === "language-unavailable") return "That voice isn't available. Pick another voice and try again.";
-    if (code === "audio-busy" || code === "audio-hardware") return "Couldn't play sound. Check your audio output and try again.";
-    return "Couldn't start the voice. Try again, or pick another voice.";
-  }
-
   // ---------- Speaking ----------
-
-  function findVoice() {
-    if (!voiceURI) return null;
-    return synth().getVoices().find((v) => v.voiceURI === voiceURI) || null;
-  }
 
   function speakCurrent() {
     const myTicket = ++ticket;
-    synth().cancel(); // drop whatever was still speaking
     const item = queue[index];
+    if (!item) return stop(); // the queue was emptied meanwhile: nothing to say
     showItem(item);
-
-    const utterance = new SpeechSynthesisUtterance(item.text);
-    utterance.rate = rate;
-    const voice = findVoice();
-    if (voice) {
-      utterance.voice = voice;
-      utterance.lang = voice.lang;
-    } else if (document.documentElement.lang) {
-      utterance.lang = document.documentElement.lang;
-    }
-    utterance.onend = () => {
-      if (myTicket !== ticket || state !== "playing") return; // an old, cancelled utterance
+    setState("playing");
+    speakViaExtension(item.text).then((res) => {
+      if (myTicket !== ticket || state !== "playing") return; // an old, replaced sentence
+      const result = (res && res.ok && res.data) || { error: (res && res.error) || "no answer" };
+      if (result.interrupted) return;
+      if (result.error) {
+        console.warn("[SCR] speech error", result.error);
+        return stop({ error: "Couldn't start the voice. Try again, or pick another voice." });
+      }
       if (index < queue.length - 1) {
         index++;
         speakCurrent();
       } else {
         stop(); // reached the end
       }
-    };
-    utterance.onerror = (e) => {
-      if (myTicket !== ticket || e.error === "interrupted" || e.error === "canceled") return;
-      console.warn("[SCR] speech error", e.error);
-      stop({ error: errorText(e.error) });
-    };
-    synth().speak(utterance);
-    setState("playing");
+    }).catch(() => {
+      if (myTicket === ticket) stop({ error: "Couldn't start the voice. Try again." });
+    });
   }
 
   function start({ scope, rate: r, voice }) {
-    if (!synth()) return { ok: false, error: "Read aloud isn't available in this browser." };
     const root = P.getRoot();
     const items = scope === "article" ? articleQueue(root) : highlightQueue(root);
     if (!items.length) {
@@ -160,25 +143,27 @@
     return { ok: true, total: queue.length };
   }
 
-  // Pause = cancel and remember the sentence; resume = say that sentence again.
-  // speechSynthesis.pause() is unreliable in Chrome (some voices ignore it, and a
-  // long pause can freeze the engine), and restarting a short sentence is fine.
+  // Pause = stop and remember the sentence; resume = say that sentence again.
+  // (Pausing mid-sentence is unreliable across voices; restarting a short
+  // sentence is fine.)
   function pause() {
     if (state !== "playing") return;
     ticket++;
-    synth().cancel();
+    silence();
     setState("paused");
   }
 
   function resume() {
-    if (state === "paused") speakCurrent();
+    if (state !== "paused") return;
+    if (queue[index]) speakCurrent();
+    else stop({ force: true }); // nothing left to resume: tell the panel we're stopped
   }
 
   // force: always tell the panel (the Stop button uses it, so the panel can
   // always get back in sync even if it missed a message).
   function stop({ error = "", force = false } = {}) {
     ticket++;
-    if (synth()) synth().cancel();
+    if (state !== "stopped") silence();
     clearOutline();
     const wasStopped = state === "stopped" && !queue.length;
     queue = [];
