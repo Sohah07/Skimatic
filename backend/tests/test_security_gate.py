@@ -98,3 +98,73 @@ def test_chrome_extensions_are_allowed_by_cors():
 def test_only_get_and_post_are_allowed():
     allowed = preflight(EXT).headers.get("access-control-allow-methods", "")
     assert "DELETE" not in allowed and "POST" in allowed
+
+
+# --- Security gate item 6: rate limiting -------------------------------------
+
+import pytest  # noqa: E402
+
+import ratelimit  # noqa: E402
+
+
+@pytest.fixture
+def limits_on(monkeypatch):
+    monkeypatch.setattr(ratelimit, "ENABLED", True)
+
+
+def article(i):
+    return {"paragraphs": [{"id": 0, "text": f"Different article number {i} with enough words."}]}
+
+
+def test_analyze_burst_is_stopped_before_gemini(limits_on, monkeypatch):
+    calls = []
+    real = main.llm.analyze
+
+    async def counting(paragraphs):
+        calls.append(1)
+        return await real(paragraphs)
+    monkeypatch.setattr(main.llm, "analyze", counting)
+    codes = [client.post("/analyze", json=article(i)).status_code for i in range(10)]
+    assert codes[:5] == [200] * 5 and set(codes[5:]) == {429}
+    assert len(calls) == 5  # the blocked ones never reached Gemini
+    r = client.post("/analyze", json=article(99))
+    assert r.json()["detail"] == ratelimit.TOO_FAST and r.headers["retry-after"] == "60"
+
+
+def test_cached_article_does_not_count(limits_on):
+    for _ in range(10):  # the same article again and again: only the first is a Gemini call
+        assert client.post("/analyze", json=article(1)).status_code == 200
+
+
+def test_simplify_burst_is_limited(limits_on):
+    codes = [client.post("/simplify", json={"sentence": f"Sentence {i} is here."}).status_code
+             for i in range(25)]
+    assert codes[:20] == [200] * 20 and set(codes[20:]) == {429}
+
+
+def test_minute_window_resets_but_hour_window_holds(limits_on):
+    class Req:  # a stand-in request from one IP
+        headers = {}
+        client = type("C", (), {"host": "1.2.3.4"})()
+    t = 1000.0
+    for minute in range(6):  # 5 per minute for 6 minutes = 30, the hourly cap
+        for _ in range(5):
+            ratelimit.check("analyze", Req, now=t + minute * 61)
+    with pytest.raises(Exception):
+        ratelimit.check("analyze", Req, now=t + 6 * 61)  # minute is fresh, hour is full
+
+
+def test_ip_comes_from_last_forwarded_entry_only_behind_proxy(monkeypatch):
+    class Req:
+        headers = {"x-forwarded-for": "6.6.6.6, 203.0.113.9"}  # first one is attacker-supplied
+        client = type("C", (), {"host": "10.0.0.1"})()
+    assert ratelimit.client_ip(Req) == "10.0.0.1"  # not trusted by default
+    monkeypatch.setattr(ratelimit, "TRUST_PROXY", True)
+    assert ratelimit.client_ip(Req) == "203.0.113.9"
+
+
+def test_daily_budget_returns_daily_limit_message(monkeypatch):
+    monkeypatch.setattr(ratelimit, "DAILY_AI_BUDGET", 2)
+    codes = [client.post("/analyze", json=article(i)).status_code for i in range(3)]
+    assert codes == [200, 200, 503]
+    assert "daily limit" in client.post("/analyze", json=article(7)).json()["detail"]

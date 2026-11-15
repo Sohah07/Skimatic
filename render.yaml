@@ -16,3 +16,9 @@ services:
       # Optional: your extension's id from chrome://extensions, so only it may call the API (CORS)
       - key: EXTENSION_ID
         sync: false
+      # Render's proxy sits in front of us: read the visitor's real IP for rate limits
+      - key: TRUST_PROXY
+        value: "1"
+      # Optional cap on Gemini calls per day for the whole server (empty = no cap)
+      - key: DAILY_AI_BUDGET
+        sync: false
