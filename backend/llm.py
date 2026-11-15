@@ -11,7 +11,7 @@ import prompts
 load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.6-flash"
 MOCK = os.getenv("MOCK_LLM", "").strip() == "1" or not API_KEY
 
 ROLES = ("main", "evidence", "background", "counter")
