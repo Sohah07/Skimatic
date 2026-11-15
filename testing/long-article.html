@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test article: Why city trees are worth more than their shade</title>
+  <!-- Local test page for the reading-comfort features (reading view, focus mode,
+       progress, read aloud). Long on purpose, with typical page chrome around the
+       article (nav, aside, an "ad", footer) that the extension must leave alone.
+       Serve the testing/ folder: python3 -m http.server 5500
+       then open http://localhost:5500/long-article.html
+       The text is original sample content written for testing. -->
+  <style>
+    body { font-family: Georgia, "Times New Roman", serif; font-size: 17px; line-height: 1.6;
+           margin: 0; color: #333; background: #fff; }
+    nav { background: #222; color: #eee; padding: 10px 16px; font-family: Arial, sans-serif; font-size: 14px; }
+    nav a { color: #eee; margin-right: 12px; }
+    .layout { display: flex; gap: 32px; max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+    article { flex: 1 1 auto; min-width: 0; }
+    article p { text-align: justify; hyphens: auto; }
+    aside { flex: 0 0 240px; font-family: Arial, sans-serif; font-size: 14px; color: #555; }
+    .ad { border: 1px solid #ccc; background: #fffbe6; padding: 12px; margin-bottom: 16px;
+          animation: blink 1.2s steps(2) infinite; }
+    @keyframes blink { 50% { background: #ffe58f; } }
+    footer { border-top: 1px solid #ddd; padding: 16px; font-family: Arial, sans-serif; font-size: 13px; color: #777; }
+    @media (max-width: 700px) { .layout { flex-direction: column; } aside { flex: none; } }
+  </style>
+</head>
+<body>
+  <nav aria-label="Site">
+    <a href="#">Home</a><a href="#">Cities</a><a href="#">Climate</a><a href="#">Newsletter</a><a href="#">Sign in</a>
+  </nav>
+
+  <div class="layout">
+    <article>
+      <h1>Why city trees are worth more than their shade</h1>
+      <p class="byline">By a sample author for the reader test page</p>
+
+      <p>On a hot afternoon, a street lined with mature trees can feel several degrees cooler than a bare street only a block away. City planners have known this for decades, yet many neighborhoods still have very few trees. A growing body of measurements now shows that the benefits of street trees go well beyond shade.</p>
+
+      <p>This article walks through what trees actually do for a city, what they cost, and why some streets get far more of them than others. It also looks at the honest limits of the evidence, because a tree is not a cure for every urban problem.</p>
+
+      <h2>How trees cool a street</h2>
+
+      <p>Trees cool the air in two main ways. Their leaves block sunlight before it reaches asphalt and brick, which would otherwise soak up heat all day and release it slowly through the night. They also release water vapor through tiny pores in their leaves, and that evaporation draws heat out of the surrounding air.</p>
+
+      <p>Surface temperatures show the effect most clearly. Researchers who point infrared cameras at sidewalks on summer afternoons often find that shaded pavement is far cooler to the touch than pavement in full sun. The air temperature difference is smaller, but people feel it, especially when they walk or wait for a bus.</p>
+
+      <p>The cooling is not evenly spread. A single tree in a parking lot helps the few cars beneath it, while a continuous canopy over a whole street changes how the entire block feels. That is why planners talk about <em>canopy cover</em>, the share of the ground that is covered by leaves when seen from above, rather than simply counting trees.</p>
+
+      <h2>Benefits beyond temperature</h2>
+
+      <p>Cooler streets are only part of the story. Tree roots and the soil around them soak up rainwater, which slows the rush of water into storm drains during heavy downpours. In older cities where sewers and storm drains share the same pipes, that delay can mean fewer overflows into rivers.</p>
+
+      <p>Leaves also trap some dust and soot from the air, although the size of this effect is often exaggerated. Several studies suggest that the improvement in air quality from street trees is real but modest, and that it depends heavily on the species, the wind, and how the street is shaped.</p>
+
+      <p>There are social effects as well. Surveys in many countries find that people rate tree-lined streets as safer and more pleasant, and they are more likely to walk there. Some researchers have linked greener neighborhoods with lower stress, though it is hard to separate the effect of trees from the effect of wealth, since richer areas tend to have both.</p>
+
+      <p>Planners who argue for more trees often list the benefits in a short summary like this one:</p>
+
+      <ul>
+        <li>Shade that lowers surface temperatures on sidewalks and roads.</li>
+        <li>Rainwater absorption that eases pressure on storm drains.</li>
+        <li>A modest improvement in local air quality.</li>
+        <li>Streets that people describe as calmer and more inviting to walk.</li>
+      </ul>
+
+      <h2>Who gets the trees</h2>
+
+      <p>When researchers map canopy cover across a city, a familiar pattern often appears. Wealthier neighborhoods tend to have more and larger trees, while poorer and more crowded districts have fewer. Because trees take decades to grow, today's canopy often reflects investment decisions made a generation or two ago.</p>
+
+      <p>This gap matters most during heat waves. Neighborhoods with little shade can be noticeably hotter, and the people who live there are often less likely to have air conditioning. Public health officials increasingly treat tree planting as one tool for reducing heat-related illness, alongside cooling centers and early warnings.</p>
+
+      <p>Some cities now publish an equity score for their planting programs, so residents can see whether new trees are reaching the streets that need them most. A good example of this kind of open data is a <a href="#tree-map">public canopy map</a> that lets anyone compare their block with the rest of the city.</p>
+
+      <h2>What trees cost</h2>
+
+      <p>Trees are not free. A young street tree needs a well-prepared pit with enough soil for its roots, regular watering for the first few years, and pruning as it grows. In many cities, a large share of newly planted trees die within their first five years, usually because they were not watered enough during dry spells.</p>
+
+      <p>Mature trees bring their own costs. Roots can lift sidewalks, branches can fall in storms, and leaves need to be cleared from gutters every autumn. Cities that plant thousands of trees without a budget for long-term care often end up with sick or dangerous trees a decade later.</p>
+
+      <blockquote>
+        <p>Planting a tree is the easy part. The real commitment is the twenty years of care that come after it, and that is where most programs fall short.</p>
+      </blockquote>
+
+      <h2>The limits of the evidence</h2>
+
+      <p>Not every claim about city trees holds up. Some widely shared numbers about how much pollution a single tree removes come from models rather than direct measurements, and they can overstate the effect by a wide margin. Careful reviewers tend to describe the air-quality benefits as small but useful.</p>
+
+      <p>Critics also point out that trees can trap pollution at street level on narrow roads with heavy traffic, because a dense canopy acts like a lid that slows the mixing of air. On those streets, low hedges between the traffic and the sidewalk may protect pedestrians better than tall trees.</p>
+
+      <p>Finally, trees compete with other uses of limited street space, such as bus lanes, bike paths and underground pipes. Planners have to weigh these trade-offs street by street, and the best answer is not always the greenest one.</p>
+
+      <h2>What it adds up to</h2>
+
+      <p>Taken together, the evidence suggests that a well-planned and well-maintained urban forest makes cities cooler, wetter in the right places, and more pleasant to live in. The benefits are largest where the canopy is thinnest today, which is often in the neighborhoods that have been overlooked.</p>
+
+      <p>The lesson for city budgets is simple to state and hard to follow. Planting is only the first step, and a tree program is only as good as the years of watering, pruning and replacement that come after the ribbon-cutting.</p>
+    </article>
+
+    <aside aria-label="Related">
+      <div class="ad">
+        <strong>Advertisement</strong>
+        <p>Big summer sale on garden furniture. Up to half off this weekend only, while stocks last!</p>
+      </div>
+      <h2>Related stories</h2>
+      <ul>
+        <li><a href="#">Ten easy houseplants for dark apartments</a></li>
+        <li><a href="#">How cool roofs reflect the summer sun</a></li>
+        <li><a href="#">The quiet return of city orchards</a></li>
+      </ul>
+    </aside>
+  </div>
+
+  <footer>
+    <p>© Example News · Privacy policy · Terms of use · Contact the newsroom for corrections.</p>
+  </footer>
+</body>
+</html>
