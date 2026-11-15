@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skimatic</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- UI teammate: preview this file in a normal Chrome tab (drag it into Chrome, or
+       File > Open). dev-stub.js fakes the extension so every button works.
+       Add ?state=offline or ?state=error to the URL to preview those states. -->
+
+  <header class="masthead">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <i style="background:var(--swatch-1)"></i><i style="background:var(--swatch-2)"></i><i style="background:var(--swatch-3)"></i>
+      </span>
+      <h1>Skimatic</h1>
+    </div>
+    <span id="backend-status" class="status-dot" data-state="checking" role="status">
+      <span class="dot" aria-hidden="true"></span><span class="status-text">Connecting</span><span class="sr-only status-detail">: checking the server…</span>
+    </span>
+  </header>
+
+  <main>
+    <!-- ======== Hero ======== -->
+    <section class="card hero" aria-labelledby="page-title">
+      <p class="eyebrow" id="page-title">This page</p>
+      <button id="analyze" class="primary" type="button">
+        <span class="btn-label">Highlight this article</span>
+        <span class="spinner" aria-hidden="true"></span>
+      </button>
+      <p id="status" class="status" aria-live="polite">Find the main point, evidence, background and the other side, in your colors.</p>
+      <!-- plain text, not live: it changes while scrolling and would be too chatty -->
+      <p id="progress" class="progress" hidden></p>
+    </section>
+
+    <!-- ======== Key points (built by keypoints-panel.js) ======== -->
+    <section class="card keypoints" aria-labelledby="kp-title">
+      <h2 id="kp-title">Key points<span id="kp-count"></span></h2>
+      <p id="kp-empty" class="hint kp-empty">Click “Highlight this article” and the key points will show up here.</p>
+      <div id="kp-body" hidden>
+        <!-- Panel-only filter: it never changes the page. Native radios, so arrow keys work. -->
+        <fieldset class="kp-filters">
+          <legend class="sr-only">Show key points</legend>
+          <div class="chips" id="kp-filters"></div>
+        </fieldset>
+        <!-- One Tab stop: arrow keys / Home / End move inside the list (roving tabindex). -->
+        <ol id="kp-list" class="kp-list" aria-labelledby="kp-title"></ol>
+        <p id="kp-status" class="status kp-status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- ======== Reading comfort ======== -->
+    <section class="card comfort" aria-labelledby="comfort-title">
+      <h2 id="comfort-title">Reading comfort</h2>
+
+      <fieldset class="field presets">
+        <legend class="field-label">Preset <span id="preset-custom" class="tag" hidden>Custom</span></legend>
+        <div class="segmented">
+          <label><input type="radio" name="preset" value="off" aria-describedby="preset-desc-off"><span>Off</span></label>
+          <label><input type="radio" name="preset" value="easy" aria-describedby="preset-desc-easy"><span>Easy reading</span></label>
+          <label><input type="radio" name="preset" value="focus" aria-describedby="preset-desc-focus"><span>Focus</span></label>
+        </div>
+        <p id="preset-desc-off" class="hint preset-desc" hidden>The page looks the way the site made it.</p>
+        <p id="preset-desc-easy" class="hint preset-desc" hidden>Bigger, more spaced-out text on a cream background. Some readers find it easier; tweak it below.</p>
+        <p id="preset-desc-focus" class="hint preset-desc" hidden>Easy reading, plus other paragraphs dimmed and only main points and evidence highlighted.</p>
+        <p id="preset-desc-custom" class="hint preset-desc" hidden>Your own mix of settings. Pick a preset to start over.</p>
+      </fieldset>
+
+      <button id="reader" class="secondary" type="button">Open clean reading view</button>
+
+      <details class="disclosure" id="text-details">
+        <summary>Text</summary>
+        <div class="disclosure-body">
+          <p id="text-off-hint" class="hint" hidden>Not applied to the page yet. Changing any of these turns them on.</p>
+
+          <div class="field">
+            <label class="field-label" for="font">Font</label>
+            <select id="font"></select>
+          </div>
+
+          <div class="field range">
+            <div class="range-head"><label class="field-label" for="size">Text size</label><output id="size-out" for="size" aria-hidden="true"></output></div>
+            <input type="range" id="size" data-key="size" min="16" max="28" step="2">
+          </div>
+          <div class="field range">
+            <div class="range-head"><label class="field-label" for="letterSpacing">Letter spacing</label><output id="letterSpacing-out" for="letterSpacing" aria-hidden="true"></output></div>
+            <input type="range" id="letterSpacing" data-key="letterSpacing" min="0" max="0.25" step="0.01">
+          </div>
+          <div class="field range">
+            <div class="range-head"><label class="field-label" for="wordSpacing">Word spacing</label><output id="wordSpacing-out" for="wordSpacing" aria-hidden="true"></output></div>
+            <input type="range" id="wordSpacing" data-key="wordSpacing" min="0" max="0.5" step="0.02">
+          </div>
+          <div class="field range">
+            <div class="range-head"><label class="field-label" for="lineHeight">Line height</label><output id="lineHeight-out" for="lineHeight" aria-hidden="true"></output></div>
+            <input type="range" id="lineHeight" data-key="lineHeight" min="1.3" max="1.8" step="0.05">
+          </div>
+          <div class="field range">
+            <div class="range-head"><label class="field-label" for="lineWidth">Line width</label><output id="lineWidth-out" for="lineWidth" aria-hidden="true"></output></div>
+            <input type="range" id="lineWidth" data-key="lineWidth" min="40" max="80" step="5">
+          </div>
+
+          <fieldset class="field">
+            <legend class="field-label">Colors</legend>
+            <div class="themes" id="themes"></div>
+          </fieldset>
+
+          <button id="reset-text" class="text-btn" type="button">Reset text settings</button>
+        </div>
+      </details>
+
+      <div class="field switch-field">
+        <button id="focus-mode" class="switch" type="button" role="switch" aria-checked="false" aria-describedby="focus-hint">
+          <span class="switch-label">Focus mode</span>
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+        </button>
+        <p id="focus-hint" class="hint">Dims other paragraphs. Move with your mouse or the J / K keys.</p>
+      </div>
+
+      <fieldset class="field">
+        <legend class="field-label">Highlights to show</legend>
+        <div class="segmented" id="density"></div>
+      </fieldset>
+    </section>
+
+    <!-- ======== Listen ======== -->
+    <section class="card listen" aria-labelledby="listen-title">
+      <h2 id="listen-title">Listen</h2>
+
+      <div class="transport" role="group" aria-label="Read aloud controls">
+        <button id="speech-prev" class="icon-btn" type="button" aria-label="Previous sentence" aria-disabled="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14"/><path d="M19 5 9 12l10 7z"/></svg>
+        </button>
+        <button id="speech-play" class="icon-btn play" type="button" aria-label="Read aloud" data-state="stopped">
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+        </button>
+        <button id="speech-stop" class="icon-btn" type="button" aria-label="Stop reading" aria-disabled="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+        </button>
+        <button id="speech-next" class="icon-btn" type="button" aria-label="Next sentence" aria-disabled="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14"/><path d="M5 5l10 7-10 7z"/></svg>
+        </button>
+      </div>
+      <p id="speech-status" class="status speech-status" role="status">Not reading.</p>
+
+      <fieldset class="field">
+        <legend class="field-label">Read</legend>
+        <div class="segmented stack-narrow">
+          <label><input type="radio" name="scope" value="highlights"><span>Highlighted sentences</span></label>
+          <label><input type="radio" name="scope" value="article"><span>Whole article</span></label>
+        </div>
+      </fieldset>
+
+      <div class="field range">
+        <div class="range-head"><label class="field-label" for="speechRate">Speed</label><output id="speechRate-out" for="speechRate" aria-hidden="true"></output></div>
+        <input type="range" id="speechRate" data-key="speechRate" min="0.7" max="1.5" step="0.1">
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="voice">Voice</label>
+        <select id="voice"><option value="">Browser default</option></select>
+      </div>
+    </section>
+
+    <!-- ======== Colors ======== -->
+    <section class="card" aria-labelledby="colors-title">
+      <div class="section-head">
+        <h2 id="colors-title">Your colors</h2>
+        <button id="visible" class="switch" type="button" role="switch" aria-checked="true" aria-label="Show highlights on the page">
+          <span class="switch-label" aria-hidden="true">Show</span>
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+        </button>
+      </div>
+      <ul id="legend" class="legend"></ul>
+      <div class="card-actions">
+        <button id="reset-colors" class="text-btn" type="button">Reset to default colors</button>
+        <button id="clear" class="text-btn" type="button">Clear highlights</button>
+      </div>
+    </section>
+
+    <section class="card tip" aria-labelledby="tip-title">
+      <h2 id="tip-title">Stuck on a sentence?</h2>
+      <p>Click any highlight (or Tab to it and press Enter) to see its backbone.</p>
+      <p class="tip-demo" aria-hidden="true">
+        <span class="demo-hl"><b>The committee</b><span class="fade">, after months of debate,</span> <b>approved the bill</b><span class="fade"> on Tuesday.</span></span>
+      </p>
+    </section>
+  </main>
+
+  <details class="debug" id="debug" hidden>
+    <summary>Developer tools</summary>
+    <div class="debug-row">
+      <button id="ping" class="ghost" type="button">Ping page</button>
+    </div>
+  </details>
+
+  <template id="legend-row">
+    <li class="legend-row">
+      <button class="swatch" type="button" aria-expanded="false"></button>
+      <div class="palette" hidden>
+        <div class="palette-swatches" role="radiogroup"></div>
+        <label class="custom">Custom color <input type="color"></label>
+      </div>
+      <div class="legend-text">
+        <span class="legend-label"></span>
+        <span class="legend-hint"></span>
+        <span class="legend-density hint" hidden>Hidden by “Highlights to show”</span>
+      </div>
+      <span class="count" hidden><span class="count-n"></span><span class="sr-only count-word"> highlights</span></span>
+      <button class="eye" type="button" aria-pressed="true">
+        <svg class="i-eye" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg class="i-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/></svg>
+      </button>
+    </li>
+  </template>
+
+  <script src="dev-stub.js"></script>
+  <script src="../shared/roles.js"></script>
+  <script src="../shared/reading-settings.js"></script>
+  <script src="sidepanel.js"></script>
+  <script src="reading-panel.js"></script>
+  <script src="listen-panel.js"></script>
+  <script src="keypoints-panel.js"></script>
+</body>
+</html>

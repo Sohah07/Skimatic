@@ -1,0 +1,358 @@
+"""The "kitchen": receives articles from the extension, asks the LLM, returns highlights.
+
+Run locally:  uvicorn main:app --reload --port 8000
+API shape:    see docs/API_CONTRACT.md
+"""
+
+import asyncio
+import logging
+import math
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+import cache
+import filters
+import llm
+import prompts
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("skimatic")
+
+app = FastAPI(title="Skimatic API")
+
+# CORS: lets the extension (and a local test page) call this server.
+# For the hackathon we allow everything; lock it down to your extension ID later:
+#   allow_origins=["chrome-extension://<your-extension-id>"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+Role = Literal["main", "evidence", "background", "counter"]
+
+# Limits. Above MAX_TOTAL_CHARS the prompt gets huge and slow; 200 paragraphs is
+# far more than any real article.
+MAX_PARAGRAPHS = 200
+MAX_TOTAL_CHARS = 60_000
+MAX_MAIN = 3  # "main" highlights per article (the prompt asks for 1-3)
+# Very long articles are split so Gemini's JSON reply doesn't get cut off.
+# The reply grows with the amount of text, not the number of paragraphs, so we
+# split on size. Every chunk is one call from the ~20-a-day free quota, so the
+# limits are generous: anything the extension sends (<= 80 paragraphs) under
+# 20,000 characters is 1 call, and the biggest allowed article is usually 3
+# calls (up to 5 in the worst case: several ~21,000-character paragraphs
+# between short ones can't share a chunk under CHUNK_MAX_CHARS).
+CHUNK_CHARS = 20_000  # aim for about this many characters per Gemini call...
+CHUNK_MAX_CHARS = 24_000  # ...and never more than this (unless one paragraph is longer)
+CHUNK_MAX_PARAGRAPHS = 80  # and at most this many paragraphs per call
+PARALLEL_CALLS = 2  # chunks sent at the same time (more trips the per-minute limit)
+
+# Same article or sentence again -> answer from memory, no Gemini call.
+ANALYZE_CACHE = cache.LRUCache(256)
+SIMPLIFY_CACHE = cache.LRUCache(256)
+
+
+class Paragraph(BaseModel):
+    id: int
+    text: str
+
+
+class AnalyzeRequest(BaseModel):
+    paragraphs: list[Paragraph]  # size limits are checked in check_limits() for a readable message
+
+
+class Highlight(BaseModel):
+    paragraph_id: int
+    text: str
+    role: Role
+
+
+class AnalyzeResponse(BaseModel):
+    highlights: list[Highlight]
+
+
+class SimplifyRequest(BaseModel):
+    sentence: str = Field(..., max_length=2000)
+
+
+class SimplifyResponse(BaseModel):
+    core: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Errors: show the reader a human message, keep the details in the server log
+# ---------------------------------------------------------------------------
+
+ERRORS = {
+    "quota": (503, "The AI's daily limit is used up. Try again later or use another API key."),
+    "rate_limit": (503, "Too many AI requests right now. Wait a minute and try again."),
+    "bad_key": (502, "The AI key isn't working. Check GEMINI_API_KEY in backend/.env."),
+    "bad_model": (502, "The AI model isn't available. Check GEMINI_MODEL in backend/.env."),
+}
+GENERIC_ERROR = (502, "The AI didn't answer properly. Try again.")
+
+
+def llm_failure(exc: Exception) -> HTTPException:
+    """Turn any LLM exception into an HTTPException with a safe, friendly message."""
+    kind = llm.error_kind(exc)
+    log.error("LLM call failed (%s): %r", kind, exc)  # the real reason, server-side only
+    status, detail = ERRORS.get(kind, GENERIC_ERROR)
+    return HTTPException(status_code=status, detail=detail)
+
+
+def model_name() -> str:
+    """Part of every cache key, so mock answers never pose as real ones."""
+    return "mock" if llm.MOCK else llm.MODEL
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "mock": llm.MOCK, "model": model_name()}
+
+
+def check_limits(paragraphs: list[Paragraph]) -> list[Paragraph]:
+    """Reject requests we can't or shouldn't send; return the non-blank paragraphs.
+
+    Blank paragraphs are dropped so they never cost part of a Gemini call, and
+    an all-blank request is a 400 instead of a wasted call.
+    """
+    if len(paragraphs) > MAX_PARAGRAPHS:
+        raise HTTPException(
+            413, f"This article has too many paragraphs ({len(paragraphs)}, max {MAX_PARAGRAPHS})."
+        )
+    paragraphs = [p for p in paragraphs if p.text.strip()]
+    if not paragraphs:
+        raise HTTPException(400, "No paragraphs were sent. Is there an article on this page?")
+    total = sum(len(p.text) for p in paragraphs)
+    if total > MAX_TOTAL_CHARS:
+        raise HTTPException(
+            413, f"This article is too long ({total:,} characters, max {MAX_TOTAL_CHARS:,})."
+        )
+    return paragraphs
+
+
+def fill_chunks(paragraphs: list[Paragraph], budget: int) -> list[list[Paragraph]]:
+    """Fill chunks in order, starting a new one when the next paragraph would
+    take the chunk over `budget` characters or CHUNK_MAX_PARAGRAPHS paragraphs.
+    A single paragraph longer than `budget` gets a chunk of its own."""
+    chunks, current, chars = [], [], 0
+    for p in paragraphs:
+        if current and (chars + len(p.text) > budget or len(current) >= CHUNK_MAX_PARAGRAPHS):
+            chunks.append(current)
+            current, chars = [], 0
+        current.append(p)
+        chars += len(p.text)
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def smallest_budget(paragraphs: list[Paragraph], n_chunks: int) -> int:
+    """The smallest character budget for which fill_chunks needs <= n_chunks chunks.
+
+    A bigger budget never needs more chunks, so we can binary search it.
+    """
+    total_chars = sum(len(p.text) for p in paragraphs)
+    longest = max(len(p.text) for p in paragraphs)
+    low = max(longest, math.ceil(total_chars / n_chunks))  # no budget below this can work
+    high = max(low, total_chars)  # everything fits, apart from the paragraph cap
+    while low < high:
+        middle = (low + high) // 2
+        if len(fill_chunks(paragraphs, middle)) <= n_chunks:
+            high = middle
+        else:
+            low = middle + 1
+    return low
+
+
+def split_into_chunks(paragraphs: list[Paragraph]) -> list[list[Paragraph]]:
+    """One chunk for normal articles; as few, evenly sized chunks as we can for long ones.
+
+    Chunks are balanced by characters, not paragraph count: with a mix of short
+    and long paragraphs, equal counts could put 35,000 characters in one call
+    and get its reply cut off. Even sizes (e.g. 90 -> 45 + 45, not 80 + 10)
+    also give every call similar context.
+    """
+    total_chars = sum(len(p.text) for p in paragraphs)
+    n_chunks = max(
+        1,
+        math.ceil(total_chars / CHUNK_CHARS),
+        math.ceil(len(paragraphs) / CHUNK_MAX_PARAGRAPHS),
+    )
+    longest = max(len(p.text) for p in paragraphs)
+    while True:
+        budget = smallest_budget(paragraphs, n_chunks)
+        # Only spend an extra call when the chunks would really be too big.
+        if budget <= max(CHUNK_MAX_CHARS, longest):
+            return fill_chunks(paragraphs, budget)
+        n_chunks += 1
+
+
+# ---------------------------------------------------------------------------
+# Never pay twice for the same question
+# ---------------------------------------------------------------------------
+
+# Questions being asked right now: cache key -> the running task.
+_IN_FLIGHT: dict[str, asyncio.Task] = {}
+
+
+async def ask_once(key: str, make_call):
+    """Run make_call(), unless the same question is already on its way to Gemini.
+
+    A double-clicked Analyze button sends two identical requests before the
+    first answer is cached. The second one waits for the first one's answer
+    instead of spending another call. Safe without locks: one event loop.
+    """
+    task = _IN_FLIGHT.get(key)
+    if task is None:
+        task = asyncio.ensure_future(make_call())
+        _IN_FLIGHT[key] = task
+        task.add_done_callback(lambda _: _IN_FLIGHT.pop(key, None))
+    # shield: if one reader closes the tab, the other still gets the answer.
+    return await asyncio.shield(task)
+
+
+def chunk_key(chunk: list[Paragraph]) -> str:
+    """Cache key for one chunk. Whitespace is ignored: the filters forgive it too."""
+    return cache.make_key(
+        model_name(), prompts.ANALYZE_PROMPT, [[p.id, cache.normalize(p.text)] for p in chunk]
+    )
+
+
+async def ask_chunk(chunk: list[Paragraph], key: str) -> list[dict]:
+    """One Gemini call for one chunk. Caches the cleaned answer if it has anything in it."""
+    result = await llm.analyze(chunk)
+    raw = result.get("highlights", []) if isinstance(result, dict) else []
+    highlights = filters.clean_highlights(raw, chunk)
+    if highlights:  # an empty answer is a miss worth retrying, not something to remember
+        ANALYZE_CACHE.put(key, highlights)
+    return highlights
+
+
+async def analyze_chunk(chunk, limiter: asyncio.Semaphore, limit_errors: list) -> tuple[list[dict], bool]:
+    """Highlights for one chunk, from the cache or from Gemini. Returns (highlights, was_cached).
+
+    Each chunk is cached on its own, so if one chunk of a long article fails,
+    analyzing again only pays for that chunk.
+    """
+    key = chunk_key(chunk)
+    highlights = ANALYZE_CACHE.get(key)
+    was_cached = highlights is not None
+    if not was_cached:
+        async with limiter:
+            if limit_errors:  # an earlier chunk hit a 429: more calls would fail too
+                raise limit_errors[0]
+            try:
+                highlights = await ask_once(key, lambda: ask_chunk(chunk, key))
+            except Exception as e:
+                if llm.error_kind(e) in ("quota", "rate_limit"):
+                    limit_errors.append(e)
+                raise
+    # Filter again against *this* request: the cached answer may have come from
+    # a request with different spacing, and this maps it onto ours.
+    return filters.clean_highlights(highlights, chunk), was_cached
+
+
+async def analyze_in_chunks(paragraphs: list[Paragraph]) -> list[dict]:
+    """Ask about every chunk (PARALLEL_CALLS at a time) and merge the answers.
+
+    Highlights keep their original paragraph ids because each chunk is
+    filtered against its own paragraphs. If some chunks fail we still return
+    the others (their quota is already spent) and log how many are missing;
+    the reader can press Analyze again to fill the gap. If all fail, raise.
+    """
+    chunks = split_into_chunks(paragraphs)
+    limiter = asyncio.Semaphore(PARALLEL_CALLS)
+    limit_errors: list[Exception] = []
+    results = await asyncio.gather(
+        *(analyze_chunk(c, limiter, limit_errors) for c in chunks), return_exceptions=True
+    )
+
+    merged, errors, from_cache = [], [], 0
+    for result in results:
+        if isinstance(result, BaseException):
+            errors.append(result)
+            continue
+        highlights, was_cached = result
+        merged.extend(highlights)
+        from_cache += was_cached
+
+    if len(errors) == len(chunks):
+        # Report the daily/minute limit if any chunk hit it: "try again" would
+        # just send the reader into the same wall.
+        raise next((e for e in errors if llm.error_kind(e) in ("quota", "rate_limit")), errors[0])
+    if errors:
+        log.warning("analyze: %d of %d chunks failed (%r); returning the rest",
+                    len(errors), len(chunks), errors[0])
+    log.info("analyze: %d paragraphs, %d chunk(s), %d from cache",
+             len(paragraphs), len(chunks), from_cache)
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# /analyze and /simplify
+# ---------------------------------------------------------------------------
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+async def analyze(req: AnalyzeRequest):
+    paragraphs = check_limits(req.paragraphs)
+    try:
+        highlights = await analyze_in_chunks(paragraphs)
+    except Exception as e:  # LLM down, bad JSON, quota, ...
+        raise llm_failure(e)
+    return AnalyzeResponse(highlights=[Highlight(**h) for h in cap_main(highlights)])
+
+
+def cap_main(highlights: list[dict]) -> list[dict]:
+    """Keep at most MAX_MAIN 'main' highlights for the whole article.
+
+    Long articles are analyzed in chunks and each chunk may pick its own 1-3
+    main points, so the merged answer can have too many. The first ones in
+    article order are kept; "Main points only" should stay a short list.
+    """
+    kept, mains = [], 0
+    for h in highlights:
+        if h["role"] == "main":
+            mains += 1
+            if mains > MAX_MAIN:
+                continue
+        kept.append(h)
+    return kept
+
+
+async def ask_simplify(sentence: str, key: str) -> list[str]:
+    """One Gemini call for one sentence. Caches the cleaned answer if it isn't empty."""
+    raw = await llm.simplify(sentence)
+    core = filters.clean_core(raw.get("core", []) if isinstance(raw, dict) else [], sentence)
+    if core:  # an empty answer is a miss worth retrying, not something to remember
+        SIMPLIFY_CACHE.put(key, core)
+    return core
+
+
+@app.post("/simplify", response_model=SimplifyResponse)
+async def simplify(req: SimplifyRequest):
+    if not req.sentence.strip():
+        raise HTTPException(400, "No sentence was sent.")
+    key = cache.make_key(model_name(), prompts.SIMPLIFY_PROMPT, cache.normalize(req.sentence))
+
+    core = SIMPLIFY_CACHE.get(key)
+    if core is not None:
+        log.info("simplify: cache hit")
+    else:
+        log.info("simplify: cache miss")
+        try:
+            core = await ask_once(key, lambda: ask_simplify(req.sentence, key))
+        except Exception as e:
+            raise llm_failure(e)
+
+    # Map the answer onto this request's spacing (a cache hit may differ in whitespace).
+    return SimplifyResponse(core=filters.clean_core(core, req.sentence))

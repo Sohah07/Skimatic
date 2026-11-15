@@ -1,0 +1,71 @@
+{
+  "manifest_version": 3,
+  "name": "Skimatic",
+  "version": "0.1.0",
+  "description": "Highlights the key points of any article, color-coded by role.",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open Skimatic"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "lib/Readability.js",
+        "shared/roles.js",
+        "shared/reading-settings.js",
+        "highlight.js",
+        "content.js",
+        "reading.js",
+        "speech.js"
+      ],
+      "css": [
+        "content.css",
+        "reading.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fonts/*.woff2"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "commands": {
+    "toggle-reader": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Open or close the clean reading view"
+    },
+    "toggle-focus": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "Turn focus mode on or off"
+    }
+  }
+}

@@ -1,0 +1,130 @@
+/* Injected into every page. Keep selectors prefixed with scr- so we never clash with the site. */
+mark.scr-hl {
+  color: inherit;
+  background-color: transparent;
+  padding: 0.05em 0;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+/* Role colors come from CSS variables set by content.js from the reader's saved colors.
+   color-mix keeps the color a light wash so text stays readable on any site. */
+mark.scr-hl[data-scr-role="main"]       { --scr-c: var(--scr-color-main); }
+mark.scr-hl[data-scr-role="evidence"]   { --scr-c: var(--scr-color-evidence); }
+mark.scr-hl[data-scr-role="background"] { --scr-c: var(--scr-color-background); }
+mark.scr-hl[data-scr-role="counter"]    { --scr-c: var(--scr-color-counter); }
+mark.scr-hl[data-scr-role] {
+  background-color: color-mix(in srgb, var(--scr-c) var(--scr-wash, 38%), transparent);
+  /* Non-color cue (WCAG 1.4.1): every role also has its own underline style,
+     so the roles can be told apart without seeing color. The line is the role
+     color mixed toward black (light pages) or white (dark theme), so it keeps
+     >= 3:1 against both the wash and the page background. */
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in srgb, var(--scr-c) 55%, var(--scr-ul-mix, #000));
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+  text-decoration-skip-ink: none;
+}
+mark.scr-hl[data-scr-role="main"]       { text-decoration-style: solid; }
+mark.scr-hl[data-scr-role="evidence"]   { text-decoration-style: dotted; }
+mark.scr-hl[data-scr-role="background"] { text-decoration-style: dashed; }
+mark.scr-hl[data-scr-role="counter"]    { text-decoration-style: wavy; text-decoration-thickness: 1.5px; }
+
+mark.scr-hl[data-scr-role]:hover {
+  background-color: color-mix(in srgb, var(--scr-c) var(--scr-wash-hover, 55%), transparent);
+}
+
+/* Dark theme (page or reading view), or a site that is dark on its own
+   (html.scr-dark-site, measured by content.js): the light role colors make a
+   mid-tone wash over a dark background, so use a thinner wash and a light underline.
+   Checked for every palette color: text >= 6.2:1 at rest and on hover,
+   underline >= 5.9:1 on the wash and >= 10:1 on the background. */
+html.scr-dark-site,
+html.scr-read.scr-theme-dark .scr-root,
+#scr-reader[data-scr-theme="dark"] {
+  --scr-wash: 22%;
+  --scr-wash-hover: 30%;
+  --scr-ul-mix: #fff;
+}
+#scr-reader:not([data-scr-theme="dark"]) {
+  --scr-wash: 38%;
+  --scr-wash-hover: 55%;
+  --scr-ul-mix: #000;
+}
+
+/* Keyboard focus: a two-tone ring that shows up on light and dark pages. */
+mark.scr-hl:focus { outline: none; }
+mark.scr-hl:focus-visible {
+  outline: 3px solid #1a4f8b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px #fff;
+}
+
+/* "Jump to" from the panel's key points list: outline the whole sentence for
+   about 1.5s (content.js adds and removes .scr-flash). The same two-tone ring
+   as keyboard focus, so it shows on light and dark pages; it pulses in once. */
+mark.scr-hl.scr-flash {
+  outline: 3px solid var(--scr-flash, #1a4f8b);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--scr-flash-halo, #fff);
+  animation: scr-flash-in 0.6s ease-out 2;
+}
+html.scr-dark-site,
+html.scr-read.scr-theme-dark .scr-root,
+#scr-reader[data-scr-theme="dark"] {
+  --scr-flash: #8ab4f8;
+  --scr-flash-halo: #000;
+}
+#scr-reader:not([data-scr-theme="dark"]) {
+  --scr-flash: #1a4f8b;
+  --scr-flash-halo: #fff;
+}
+@keyframes scr-flash-in {
+  0%   { outline-offset: 8px; outline-color: transparent; }
+  100% { outline-offset: 2px; }
+}
+
+/* Hide everything, or one role at a time (eye buttons and the density setting). */
+html.scr-hidden mark.scr-hl,
+html.scr-hide-main mark.scr-hl[data-scr-role="main"],
+html.scr-hide-evidence mark.scr-hl[data-scr-role="evidence"],
+html.scr-hide-background mark.scr-hl[data-scr-role="background"],
+html.scr-hide-counter mark.scr-hl[data-scr-role="counter"] {
+  background-color: transparent !important;
+  text-decoration: none !important;
+  box-shadow: none !important;
+  cursor: auto;
+}
+
+/* "Backbone" view after clicking a highlight.
+   The faded words are the text color at 80% over the wash (not opacity, which
+   would also fade the underline). That keeps >= 4.5:1 on every theme's wash with
+   every palette color (lowest: 4.5:1 dark theme on hover, 5.0:1 #333 on white).
+   -webkit-text-fill-color is used so the theme rules that force `color` can't undo it. */
+mark.scr-hl .scr-core   { font-weight: 700; }
+mark.scr-hl .scr-faded  { -webkit-text-fill-color: color-mix(in srgb, currentColor 80%, transparent); }
+mark.scr-hl.scr-loading { animation: scr-pulse 0.9s ease-in-out infinite; }
+@keyframes scr-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  mark.scr-hl { transition: none; }
+  /* No pulsing: a still dashed outline says "working on it" instead. */
+  mark.scr-hl.scr-loading { animation: none; outline: 2px dashed currentColor; outline-offset: 2px; }
+  /* The jump outline just appears and stays still for its 1.5s. */
+  mark.scr-hl.scr-flash { animation: none; }
+}
+
+/* Screen-reader-only live region (announces "Simplifying…", the backbone, errors). */
+#scr-live {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}

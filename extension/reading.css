@@ -1,0 +1,219 @@
+/* Reading comfort styles (see docs/ACCESSIBILITY.md, "Page side").
+   reading.js sets the CSS variables on <html>:
+     --scr-font --scr-size --scr-ls --scr-ws --scr-lh --scr-lw   (text settings)
+     --scr-bg --scr-fg --scr-fade --scr-link                     (theme colors)
+   Everything on the page is scoped to .scr-block, which content.js puts on the
+   article's own paragraphs, lists, quotes and headings only, so menus, sidebars,
+   comments and footers keep the site's own look (even when they sit inside .scr-root).
+   !important is needed because we are overriding the site's own CSS. */
+
+/* ---------- 1. Text settings (html.scr-read on the page; always in the reading view) ---------- */
+html.scr-read .scr-root .scr-block,
+#scr-reader .scr-reader-body :is(.scr-block, h1, h2, h3, h4) {
+  font-size: calc(var(--scr-size) * var(--scr-scale, 1)) !important;
+  letter-spacing: var(--scr-ls) !important;
+  word-spacing: var(--scr-ws) !important;
+  line-height: var(--scr-lh) !important;
+  /* Ragged right is easier to track than justified text, and broken words
+     ("hy-phen") are harder to decode, so: start-aligned, no auto hyphens. */
+  text-align: start !important;
+  text-justify: none !important;
+  hyphens: manual !important;
+  -webkit-hyphens: manual !important;
+  /* Reflow (WCAG 1.4.10): at large sizes and spacing in a narrow window, a long word
+     ("neighborhoods") may break rather than push the page sideways. No hyphen is added. */
+  overflow-wrap: anywhere !important;
+}
+/* Headings keep a size step above the body text so the structure stays visible.
+   (A scale variable, because a plain "h1 { font-size }" rule would lose to the
+   more specific rule above.) */
+:is(html.scr-read .scr-root h1.scr-block, #scr-reader .scr-reader-body h1) { --scr-scale: 1.6; }
+:is(html.scr-read .scr-root h2.scr-block, #scr-reader .scr-reader-body h2) { --scr-scale: 1.35; }
+:is(html.scr-read .scr-root h3.scr-block, #scr-reader .scr-reader-body h3) { --scr-scale: 1.15; }
+:is(html.scr-read .scr-root h4.scr-block, #scr-reader .scr-reader-body h4) { --scr-scale: 1.05; }
+
+/* Shorter lines (about 65 characters) are easier to follow back to the next line. */
+html.scr-read .scr-root .scr-block,
+#scr-reader .scr-reader-body .scr-block {
+  max-inline-size: var(--scr-lw) !important;
+}
+
+/* Font family, only when the reader picked one (font = "site" keeps the site's). */
+html.scr-read.scr-font .scr-root .scr-block {
+  font-family: var(--scr-font) !important;
+}
+
+/* Links, spans etc. inside a block follow the block's font and spacing.
+   Code keeps its monospace font. */
+html.scr-read .scr-root .scr-block :not(code, kbd, pre, samp),
+#scr-reader .scr-reader-body .scr-block :not(code, kbd, pre, samp) {
+  font-family: inherit !important;
+  letter-spacing: inherit !important;
+  word-spacing: inherit !important;
+}
+
+/* Italics are hard to read for many people: show emphasis as semi-bold upright text. */
+html.scr-read .scr-root .scr-block :is(em, i, cite),
+#scr-reader .scr-reader-body .scr-block :is(em, i, cite) {
+  font-style: normal !important;
+  font-weight: 600 !important;
+}
+
+/* ---------- 2. Themes (html.scr-theme-<name>, only while text settings are on) ----------
+   Background and text color always change together, and only on the blocks.
+   (Painting .scr-root too would put the theme background behind bylines, captions
+   and widgets that keep the site's own text color: dark grey on dark, for example.)
+   Inside a block, everything takes the theme's text color on a transparent
+   background, except the highlights (their own wash) and links (--scr-link). */
+html.scr-read:is(.scr-theme-cream, .scr-theme-greyblue, .scr-theme-dark) .scr-root .scr-block {
+  background-color: var(--scr-bg) !important;
+  color: var(--scr-fg) !important;
+}
+html.scr-read:is(.scr-theme-cream, .scr-theme-greyblue, .scr-theme-dark) .scr-root .scr-block :not(a, a *) {
+  color: inherit !important;
+}
+html.scr-read:is(.scr-theme-cream, .scr-theme-greyblue, .scr-theme-dark) .scr-root .scr-block :not(mark.scr-hl) {
+  background-color: transparent !important;
+}
+html.scr-read:is(.scr-theme-cream, .scr-theme-greyblue, .scr-theme-dark) .scr-root .scr-block a {
+  color: var(--scr-link) !important;
+}
+
+/* ---------- 3. Focus mode: dim the other blocks without breaking contrast ----------
+   Not with opacity: that would also fade the highlights, links and backbone words,
+   and fade the text toward the highlight wash. Instead only the plain text of the
+   other blocks is drawn at --scr-dim of its color. reading.js works --scr-dim out
+   from the article's own text and background colors so it stays >= 4.5:1 (and
+   never below 65%). Highlights, links and backbone words keep full strength.
+   -webkit-text-fill-color wins over `color` without fighting the site's CSS. */
+html.scr-focus .scr-block,
+html.scr-focus .scr-block * {
+  transition: -webkit-text-fill-color 150ms ease;
+}
+html.scr-focus .scr-block:not(.scr-active),
+html.scr-focus .scr-block:not(.scr-active) :not(mark.scr-hl, mark.scr-hl *, a, a *) {
+  -webkit-text-fill-color: color-mix(in srgb, currentColor var(--scr-dim, 100%), transparent) !important;
+}
+html.scr-focus .scr-block:not(.scr-active) :is(mark.scr-hl, a) {
+  -webkit-text-fill-color: currentColor !important;
+}
+
+/* ---------- 4. Read aloud: the sentence being spoken gets an outline (no color change) ---------- */
+.scr-speaking {
+  outline: 2px solid currentColor !important;
+  outline-offset: 2px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.scr-focus .scr-block,
+  html.scr-focus .scr-block * { transition: none; }
+}
+
+/* ---------- 5. Clean reading view (#scr-reader) ---------- */
+html.scr-reader-open,
+html.scr-reader-open > body {
+  overflow: hidden !important; /* the overlay scrolls itself, not the page behind it */
+}
+
+#scr-reader {
+  all: initial; /* start from a blank slate: the site's CSS shouldn't leak in */
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  display: block !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  /* Keep whatever gets focus (Tab / Shift+Tab through the highlights) clear of the
+     sticky header bar. reading.js writes the bar's measured height here. */
+  scroll-padding-top: calc(var(--scr-bar-h, 4.5em) + 0.5em) !important;
+  background: var(--scr-bg, #FBF7EC) !important;
+  color: var(--scr-fg, #222222) !important;
+  font-family: var(--scr-site-font, system-ui, sans-serif);
+  font-size: var(--scr-size, 20px);
+  line-height: var(--scr-lh, 1.5);
+}
+html.scr-font #scr-reader {
+  font-family: var(--scr-font);
+}
+#scr-reader *, #scr-reader *::before, #scr-reader *::after {
+  box-sizing: border-box;
+}
+
+/* Header: article title + close button, stays at the top while you scroll. */
+/* When the bar would take more than a quarter of the screen (narrow window, large
+   text), it scrolls away with the article instead (reading.js sets the class). */
+#scr-reader.scr-bar-static .scr-reader-bar { position: relative; }
+#scr-reader.scr-bar-static { scroll-padding-top: 0.5em !important; }
+#scr-reader .scr-reader-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em 1em;
+  padding: 0.6em 1.25em;
+  background: var(--scr-bg, #FBF7EC);
+  border-bottom: 1px solid var(--scr-fade, #6B6B6B);
+}
+#scr-reader .scr-reader-title {
+  all: unset;
+  flex: 1 1 12em;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.9em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+#scr-reader .scr-reader-close {
+  all: unset;
+  flex: none;
+  min-height: 32px;
+  padding: 0.3em 0.9em;
+  border: 2px solid var(--scr-fg, #222);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--scr-fg, #222);
+  background: var(--scr-bg, #FBF7EC);
+  cursor: pointer;
+}
+#scr-reader .scr-reader-close:hover { background: color-mix(in srgb, var(--scr-fg, #222) 10%, var(--scr-bg, #fff)); }
+#scr-reader .scr-reader-close:focus-visible {
+  outline: 3px solid var(--scr-link, #1A4F8B);
+  outline-offset: 2px;
+}
+
+/* Article body: one centered column. */
+#scr-reader .scr-reader-body {
+  display: block;
+  overflow-wrap: anywhere;
+  max-inline-size: calc(var(--scr-lw, 65ch) + 2.5em);
+  margin: 0 auto;
+  padding: 1.5em 1.25em 4em;
+}
+#scr-reader .scr-reader-body *:not(mark.scr-hl, a) {
+  color: inherit !important;
+}
+#scr-reader .scr-reader-body *:not(mark.scr-hl) {
+  background-color: transparent !important;
+}
+#scr-reader .scr-reader-body *:not(code, kbd, pre, samp) {
+  font-family: inherit !important;
+}
+#scr-reader .scr-reader-body a { color: var(--scr-link, #1A4F8B) !important; text-decoration: underline !important; }
+#scr-reader .scr-reader-body :is(p, ul, ol, blockquote, figure, pre, table) { margin: 0 0 1em !important; }
+#scr-reader .scr-reader-body :is(h1, h2, h3, h4) { margin: 1.2em 0 0.4em !important; font-weight: 700 !important; }
+#scr-reader .scr-reader-body :is(ul, ol) { padding-inline-start: 1.5em !important; }
+#scr-reader .scr-reader-body ul { list-style: disc outside !important; }
+#scr-reader .scr-reader-body ol { list-style: decimal outside !important; }
+#scr-reader .scr-reader-body li { display: list-item !important; margin: 0 0 0.4em !important; }
+#scr-reader .scr-reader-body blockquote {
+  padding-inline-start: 1em !important;
+  border-inline-start: 4px solid var(--scr-fade, #6B6B6B) !important;
+}
+#scr-reader .scr-reader-body :is(img, video, svg, figure) { max-width: 100% !important; height: auto !important; }
+#scr-reader .scr-reader-body :is(pre, code) { font-size: 0.85em !important; white-space: pre-wrap !important; }
