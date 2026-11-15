@@ -31,12 +31,31 @@ as 4.5:1 allows), not with opacity on whole blocks, which also fades highlights 
 ## Settings (chrome.storage.sync key `reading`)
 
 See `SCR_READING_DEFAULTS` in `shared/reading-settings.js`. The content scripts listen to
-`chrome.storage.onChanged` and apply changes live. The panel writes via `scrSaveReading(patch)`.
+`chrome.storage.onChanged` and apply changes live. The panel writes via `scrSaveReading(patch)`,
+then sends `APPLY_READING` so the tab the reader is on gets the page scripts if it doesn't have
+them yet (only when text settings or focus mode are on, and only where Chrome gives Skimatic
+access; see README, "Permissions and security").
+
+The page scripts are not on every site. They are injected into a tab when the reader uses
+Skimatic there (toolbar icon, a keyboard shortcut, or a panel button on a tab Skimatic may
+access). The switch **Use on every website** (reading comfort card) is the opt-in for the old
+behaviour: it asks Chrome for access to all sites, then the background registers the page
+scripts for every http(s) page (`chrome.scripting.registerContentScripts`, id `scr-auto`).
+Turning it off unregisters them and gives the permission back.
+
+Privacy: the page can read `<html>`'s `style` and classes, so the page scripts only write a
+reader's values there while they are in use: role colors once the page is highlighted, text
+variables while text settings are on or the reading view is open.
 Any manual change sets `preset: "custom"`; picking a preset writes `{...SCR_READING_PRESETS[p], preset: p}`.
 
 ## Messages
 
-Panel → background → page (background forwards these to the active tab via `sendToTab`):
+Panel → background → page (background forwards these to the active tab via `sendToTab`).
+The background accepts these only from the side panel page (it checks `sender.url`), checks
+every field (known `action`/`role`/`scope` values, numbers in range, string lengths) and
+forwards a rebuilt message, never the one it received. The page accepts messages only from the
+extension itself (`sender.id`, no `sender.tab`). A message type the background doesn't know, or
+from a sender that may not send it, gets no answer.
 
 | type | payload | page replies |
 |---|---|---|
@@ -44,6 +63,10 @@ Panel → background → page (background forwards these to the active tab via `
 | `SPEAK` | `{scope: "highlights" \| "article", rate, voice}` | `{ok, total}` (starts from the first sentence; if `scope=highlights` and there are no highlights, `{ok:false, error:"No highlights yet"}`; if the page is highlighted but none are shown, `error:"Highlights are switched off"` (master switch off) or `"Highlights are hidden"` (every role hidden by the eye buttons / density)) |
 | `SPEECH_CONTROL` | `{action: "pause" \| "resume" \| "stop" \| "next" \| "prev"}` | `{ok}` |
 | `GET_PAGE_STATE` | — | `{ok, reader: bool, speech: SpeechState, progress: Progress \| null, counts: {role: n} \| null, found: number, hiddenRoles: string[], visible: bool}` |
+
+`GET_PAGE_STATE` never injects into a page Skimatic wasn't used on (unless text settings or focus
+mode are on); for such a page, or one Skimatic may not access, the background answers `data: null`
+and the panel shows its defaults.
 
 `GET_PAGE_STATE` lets the panel rebuild itself after a tab switch: `progress` is null on a page
 that was never analyzed or set up; `counts` is the number of highlights per role the backend sent
@@ -61,12 +84,43 @@ the panel may be closed):
 | `PROGRESS` | `{keySeen, keyTotal, minutesLeft, percent}` — sent at most every 500ms while scrolling, right after highlights are applied, when the shown roles change (eye buttons, density, master switch; `keyTotal` counts shown highlights only, so it is 0 with the master switch off), and after CLEAR (then `keyTotal` is 0). The panel hides the line when `keyTotal` is 0 |
 | `READER_STATE` | `{open: bool}` — sent whenever the reading view opens or closes (also via Esc / keyboard shortcut) |
 
-Keyboard shortcuts (manifest `commands`, handled in background.js): Alt+Shift+R toggles the
-reading view; Alt+Shift+F toggles focus mode.
+Page → background:
+
+| type | payload | reply |
+|---|---|---|
+| `SIMPLIFY` | `{index}`: the highlight's position in the list `APPLY_HIGHLIGHTS` delivered | `{ok, data: {core: [string]}}` or `{ok:false, error}` |
+
+The page never sends the sentence itself. The background keeps the sentences `/analyze`
+returned for each tab (`chrome.storage.session`, which content scripts can't read), looks up
+`index` for the sender's own tab, and refuses unknown indexes. It caches results and allows at
+most 8 backend calls per tab per 10 seconds. Only real clicks / key presses (`event.isTrusted`)
+on marks the extension painted itself start a simplify; a page script calling `mark.click()`,
+or a `<mark class="scr-hl">` the page made, does nothing.
+
+Background → panel: `ACCESS_CHANGED` (no payload) after the toolbar icon or a keyboard shortcut,
+so an open panel looks at the page again.
+
+Keyboard shortcuts (manifest `commands`, handled in background.js): Alt+Shift+H highlights the
+article; Alt+Shift+R toggles the reading view; Alt+Shift+F toggles focus mode. Each one also gives
+Skimatic access to the current tab (Chrome's activeTab).
 
 ## Page side (content scripts: `content.js`, `reading.js`, `speech.js`, `highlight.js`, `content.css`, `reading.css`)
 
-Script order: Readability → roles → reading-settings → highlight → content → reading → speech.
+Script order: Readability → roles → reading-settings → highlight → content → reading → speech
+(`CONTENT_SCRIPTS` in background.js).
+
+Our own marks: `highlight.js` keeps every `<mark>` it creates, with its id and role, in a private
+map (`SCR.isOwnMark`, `SCR.marksIn(root)`, `SCR.idOf(mark)`, `SCR.roleOf(mark)`). Page-side code
+must use these, never `querySelectorAll("mark.scr-hl")` or `mark.dataset.scrId/scrRole` on their
+own: a page can create look-alike marks or edit our attributes. The `data-scr-*` attributes are
+only there for `content.css`.
+
+Reading view: Readability's article HTML is rebuilt from an allowlist (`cleanArticleNodes` in
+`reading.js`): fresh elements made with `document.createElement`, only a few attributes copied
+(`href` for http/https/mailto/#, `src` for http/https images, `alt`, `title`, table spans...), text
+copied as text. Unknown elements are unwrapped; scripts, forms, embeds, media and svg/math are
+dropped. Never move parsed nodes into the page (`adoptNode`/`append` of DOMParser nodes): inline
+`on*` handlers survive `removeAttribute` that way and run in the page.
 `content.js` exposes what the others need on `self.SCR_PAGE`:
 `{ extractArticle, applyHighlights(highlights, root?), getHighlights(), getRoot(), markBlocks(root?), announce(text) }`.
 
@@ -220,10 +274,13 @@ Page → panel:
 
 | type | payload |
 |---|---|
-| `HIGHLIGHTS_STATE` | `{items: [{id, role, text}], hiddenRoles: [role]}`. Sent after highlights are applied, cleared, or re-painted (reading view open/close), and when the set of hidden roles changes (density, eye buttons, master switch). `items` has only highlights that were actually found on the page, in document order. `id` is the mark's `data-scr-id` in the current root. `text` is the full sentence. `hiddenRoles` lists roles that are currently not shown; when the master switch is off, it lists all four. |
+| `HIGHLIGHTS_STATE` | `{items: [{id, role, text}], hiddenRoles: [role]}`. Sent after highlights are applied, cleared, or re-painted (reading view open/close), and when the set of hidden roles changes (density, eye buttons, master switch). `items` has only highlights that were actually found on the page, in document order (only marks the extension painted, with a known role). `id` is the mark's id (digits) in the current root. `text` is the full sentence. `hiddenRoles` lists roles that are currently not shown; when the master switch is off, it lists all four. |
 | `PROGRESS` (extended) | Also gets `seenIds: [id]` (highlights already seen) and `currentId` (the shown highlight nearest the top third of the viewport, or `null`). |
 
-`GET_PAGE_STATE` also returns `highlights: {items, hiddenRoles}`.
+`GET_PAGE_STATE` also returns `highlights: {items, hiddenRoles}`. The panel treats both as
+untrusted (they come from the page's process): it keeps only items with a known role, a numeric
+id and a string sentence (capped in length and number), and accepts page → panel messages only
+from the top frame of the tab it is showing.
 
 Panel → background → page:
 

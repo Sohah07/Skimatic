@@ -207,7 +207,7 @@ Commands:
 ## Milestone 3: AI reader (Gemini)
 
 ### Milestone 3, Step 1: read the Gemini docs and install the SDK
-We read Google's current structured-output docs and installed `google-genai==3.3.0`. The first install failed because the newest `cryptography` has no prebuilt wheel for Intel Macs, so we pinned `cryptography==48.0.1`, which does; we also confirmed from the installed SDK that `genai.Client` takes `api_key=` and that timeouts are set in milliseconds via `HttpOptions(timeout=...)`.
+We read Google's current structured-output docs and installed `google-genai==3.3.0`. The first install failed because the newest `cryptography` has no prebuilt wheel for Intel Macs, so we pinned `cryptography==48.0.1`, which does (later raised to `cryptography==50.0.2` in a security review: 48.0.1 has published advisories (pip-audit: PYSEC-2026-3552, -3553, -3554), so on an Intel Mac install Rust first and let it build from source); we also confirmed from the installed SDK that `genai.Client` takes `api_key=` and that timeouts are set in milliseconds via `HttpOptions(timeout=...)`.
 
 Key syntax from the docs:
 - `client.models.generate_content(model=..., contents=..., config={"response_mime_type": "application/json", "response_json_schema": Model.model_json_schema()})`

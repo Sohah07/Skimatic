@@ -1,5 +1,9 @@
-# Secrets: never commit
+# Secrets: never commit. Covers per-environment copies too (.env.local,
+# .env.production, direnv's .envrc); only the key-less template is tracked.
 .env
+.env.*
+!.env.example
+.envrc
 
 # Python virtual environment
 .venv/

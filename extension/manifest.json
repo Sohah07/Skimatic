@@ -3,14 +3,19 @@
   "name": "Skimatic",
   "version": "0.1.0",
   "description": "Highlights the key points of any article, color-coded by role.",
+  "minimum_chrome_version": "116",
   "permissions": [
     "sidePanel",
     "storage",
     "scripting",
-    "tabs"
+    "activeTab"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "http://localhost:8000/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -21,28 +26,6 @@
   "action": {
     "default_title": "Open Skimatic"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "lib/Readability.js",
-        "shared/roles.js",
-        "shared/reading-settings.js",
-        "highlight.js",
-        "content.js",
-        "reading.js",
-        "speech.js"
-      ],
-      "css": [
-        "content.css",
-        "reading.css"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
   "web_accessible_resources": [
     {
       "resources": [
@@ -51,10 +34,17 @@
       "matches": [
         "http://*/*",
         "https://*/*"
-      ]
+      ],
+      "use_dynamic_url": true
     }
   ],
   "commands": {
+    "highlight-page": {
+      "suggested_key": {
+        "default": "Alt+Shift+H"
+      },
+      "description": "Highlight the article on this page"
+    },
     "toggle-reader": {
       "suggested_key": {
         "default": "Alt+Shift+R"
@@ -67,5 +57,8 @@
       },
       "description": "Turn focus mode on or off"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; connect-src http://localhost:8000"
   }
 }

@@ -14,7 +14,7 @@
   <header class="masthead">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">
-        <i style="background:var(--swatch-1)"></i><i style="background:var(--swatch-2)"></i><i style="background:var(--swatch-3)"></i>
+        <i></i><i></i><i></i>
       </span>
       <h1>Skimatic</h1>
     </div>
@@ -123,6 +123,14 @@
         <legend class="field-label">Highlights to show</legend>
         <div class="segmented" id="density"></div>
       </fieldset>
+
+      <div class="field switch-field">
+        <button id="auto-apply" class="switch" type="button" role="switch" aria-checked="false" aria-describedby="auto-apply-hint">
+          <span class="switch-label">Use on every website</span>
+          <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+        </button>
+        <p id="auto-apply-hint" class="hint">Off: settings apply only to pages where you use Skimatic. On: Chrome asks to let Skimatic read all sites, and your settings apply everywhere.</p>
+      </div>
     </section>
 
     <!-- ======== Listen ======== -->

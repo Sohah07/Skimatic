@@ -38,15 +38,25 @@ if (chrome.windows && chrome.windows.getCurrent) {
   chrome.windows.getCurrent().then((w) => (panelWindowId = w.id)).catch(() => {});
 }
 
-// Only listen to the tab this panel is showing (the active tab of our window).
+// Page -> panel messages come from our content scripts, which share a process with
+// the web page: accept them only from the top frame of the tab this panel is showing
+// (the active tab of our window), and treat what they carry as untrusted data.
 function fromShownTab(sender) {
   const tab = sender && sender.tab;
-  if (!tab) return true;
+  if (!tab) return false;
+  if (sender.frameId != null && sender.frameId !== 0) return false;
   if (panelWindowId != null && tab.windowId != null && tab.windowId !== panelWindowId) return false;
   return tab.active !== false;
 }
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
+  // The background: the toolbar icon or a shortcut just gave Skimatic access to the
+  // tab (or changed it), so look at the page again.
+  if (msg && msg.type === "ACCESS_CHANGED" && sender && !sender.tab &&
+      sender.id === chrome.runtime.id && sender.url === chrome.runtime.getURL("background.js")) {
+    resetForNewPage();
+    return false;
+  }
   if (!msg || !pageListeners[msg.type]) return false;
   if (!fromShownTab(sender)) return false;
   emitPage(msg.type, msg);
@@ -118,8 +128,14 @@ async function checkBackend() {
 
 async function showPageTitle() {
   const res = await send({ type: "TAB_INFO" });
-  $("page-title").textContent = res.ok && res.data && res.data.title ? res.data.title : "This page";
+  // Chrome only tells us the title of a page Skimatic may access (no "tabs" permission).
+  $("page-title").textContent = res.ok && res.data && res.data.title ? res.data.title.slice(0, 200) : "This page";
 }
+
+// Skimatic has no access to any site until the user points it at one: the toolbar icon
+// or a keyboard shortcut (Chrome's activeTab), or "Use on every website".
+const NO_ACCESS = "Skimatic can't read this tab yet. If it's a web page, click the Skimatic " +
+  "icon in Chrome's toolbar while on it (or press Alt+Shift+H), then try again.";
 
 function renderProgress(p) {
   const el = $("progress");
@@ -166,7 +182,10 @@ $("analyze").addEventListener("click", async () => {
   btn.querySelector(".btn-label").textContent = "Reading…";
   setStatus("Reading the article and finding the key sentences…");
 
-  const res = await send({ type: "ANALYZE_ACTIVE_TAB" });
+  const info = await send({ type: "TAB_INFO" });
+  const res = info.ok && info.data && info.data.access === false
+    ? (send({ type: "REQUEST_ACCESS" }), { ok: false, error: NO_ACCESS }) // also flags it in Chrome's toolbar
+    : await send({ type: "ANALYZE_ACTIVE_TAB" });
 
   setBusy(btn, false);
   btn.classList.remove("loading");
@@ -188,8 +207,9 @@ $("analyze").addEventListener("click", async () => {
 function friendlyError(err = "") {
   if (/Failed to fetch|NetworkError/i.test(err)) return "Can't reach the server. Is the backend running?";
   if (/Couldn't find an article/i.test(err)) return "This page doesn't look like an article.";
-  if (/Cannot access|chrome:\/\/|Receiving end does not exist|No active tab/i.test(err))
+  if (/chrome:\/\/|chrome-extension:\/\/|extensions gallery|No active tab/i.test(err))
     return "Chrome doesn't let extensions read this page.";
+  if (/Cannot access|must request permission|Receiving end does not exist/i.test(err)) return NO_ACCESS;
   return err;
 }
 
