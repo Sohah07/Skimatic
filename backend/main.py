@@ -8,6 +8,7 @@ import asyncio
 import logging
 import math
 import os
+import re
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
@@ -103,14 +104,21 @@ async def bad_request_shape(request: Request, exc: RequestValidationError):
     )
 
 
-# CORS: lets the extension (and a local test page) call this server.
-# For the hackathon we allow everything; lock it down to your extension ID later:
-#   allow_origins=["chrome-extension://<your-extension-id>"]
+# 5.1 CORS: only Chrome extensions may call us from a browser. The extension
+# itself doesn't even need this (its background worker has host permission, so
+# Chrome lets it through without CORS), but allowing "*" let ANY website a
+# visitor opens call this server and spend the Gemini quota. Set EXTENSION_ID
+# (from chrome://extensions) to allow only our own extension.
+EXTENSION_ID = os.getenv("EXTENSION_ID", "").strip()
+EXTENSION_ORIGINS = (
+    rf"chrome-extension://{re.escape(EXTENSION_ID)}" if EXTENSION_ID
+    else r"chrome-extension://[a-p]{32}"  # any extension id (32 letters a-p)
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origin_regex=EXTENSION_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 Role = Literal["main", "evidence", "background", "counter"]

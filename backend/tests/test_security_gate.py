@@ -72,3 +72,29 @@ def test_api_docs_are_off_by_default():
 
 def test_health_shows_no_config():
     assert client.get("/health").json() == {"status": "ok", "mock": True}
+
+
+# --- Security gate item 5: CORS -------------------------------------------
+
+EXT = "chrome-extension://" + "a" * 32
+
+
+def preflight(origin):
+    return client.options("/analyze", headers={
+        "Origin": origin, "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type"})
+
+
+def test_websites_are_not_allowed_by_cors():
+    r = preflight("https://evil.example")
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_chrome_extensions_are_allowed_by_cors():
+    r = preflight(EXT)
+    assert r.headers.get("access-control-allow-origin") == EXT
+
+
+def test_only_get_and_post_are_allowed():
+    allowed = preflight(EXT).headers.get("access-control-allow-methods", "")
+    assert "DELETE" not in allowed and "POST" in allowed
