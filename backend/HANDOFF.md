@@ -28,7 +28,9 @@ The free-tier quota ran out before the latest prompts could be evaluated. The la
 - `/analyze`: 86% of returned sentences were exact (target ≥ 90%), but only 5% of sentences were highlighted (target 10–20%). Too few `main` and no `background`. `counter` detection was good.
 - `/simplify`: every successful call was exact and in order, but the pieces were too terse. Median 4.4 s per call (target ~2 s).
 
-The current prompts target those gaps. Run `python prompt_lab.py` against `test_paragraphs.txt` and compare with `gold.json` before the demo.
+Scoring is now one command each (tested in mock mode only, so far):
+`python prompt_lab.py --score` (1 Gemini call, vs `gold.json`) and
+`python prompt_lab.py --score-simplify --limit 5` (5 calls, vs `gold_simplify.json`).
 
 ## Model, key and quota
 
@@ -57,11 +59,25 @@ Every `text` must appear character for character in its paragraph, and every `co
 
 Blair's spec asks for an in-memory dict. Use that. I have a working MongoDB Atlas cache from my own prototype if we go for the sponsor prize; ask me before spending time on it.
 
+## Done during integration
+
+- In-memory LRU cache (256 entries) for `/analyze` and `/simplify` (`cache.py`): the same article or sentence costs no second Gemini call. `/analyze` caches per chunk. The key ignores whitespace, and a hit is mapped back onto the new request's exact spacing. Empty answers are never cached, so a bad reply gets asked again. Hits show in the server log only.
+- Two identical requests at the same time (double click) share one Gemini call (`main.ask_once`).
+- One retry with a 1.5 s pause on timeouts and 5xx (`llm.ask_json`). No retry on 429, a bad key or a missing model. A 429 whose text names the per-day quota (`...PerDay...`) says "daily limit is used up"; any other 429 says "wait a minute".
+- Chunking on size, because the reply gets cut off by length, not paragraph count: an article becomes several calls only above 20,000 characters or 80 paragraphs (`CHUNK_CHARS`, `CHUNK_MAX_PARAGRAPHS`). Chunks are balanced by characters (not paragraph count, which let one chunk of a mixed short/long article reach 35,000 characters) and no chunk goes over `CHUNK_MAX_CHARS` (24,000) unless a single paragraph is longer. 2 run at a time, and the first 429 stops the rest; if every chunk fails, a 429 is reported ahead of other errors so the reader sees "daily limit", not "try again". **Cost per article:** anything the extension sends under 20,000 characters is 1 call; the largest allowed article (60,000 characters / 200 paragraphs) is usually 3 calls, up to 5 in the worst case (several ~21,000-character paragraphs between short ones).
+- Partial results: if some chunks fail, `/analyze` still returns the others with HTTP 200 and logs `N of M chunks failed`. The reader isn't told (the contract has no field for it). Pressing Analyze again pays only for the failed chunks, because the good ones are cached.
+- Limits: empty list or only blank paragraphs → 400 (no call), over 60,000 characters → 413, over 200 paragraphs → 413. Blank paragraphs are dropped before the call.
+- Stricter filter (`filters.py`, ported from `standalone/validator.py`): no empty, duplicate or overlapping highlights, at most 2 per paragraph, article order. `/simplify` pieces must be exact, in order and not overlap.
+- Human error messages (quota → 503, bad key / bad model / anything else → 502); the real exception goes to the server log only. The extension now shows the `detail` text.
+- `prompt_lab.py --score` and `--score-simplify` (see Status). `--score` precision/recall are strict (exact sentence after whitespace); "gold touched" is a lenient overlap count. Mock-mode numbers mean nothing about prompt quality.
+- `gold_simplify.json` rows 8 and 9 list their pieces out of sentence order. Not edited (it's hand-made data); `--score-simplify` now scores gold pieces in any order and prints a note.
+
+- `main` is capped at 3 per article after merging chunks (`cap_main` in main.py); the first 3 in article order are kept.
+
 ## Not done
 
-- Scoring the current prompts against `gold.json` (blocked on quota).
+- Scoring the current prompts against `gold.json` with the real model (blocked on quota; the commands are ready).
 - `/simplify` speed (~4 s; the target is ~2 s).
-- Chunking long articles (Blair: ~20 paragraphs per call, parallel with `asyncio.gather`, merge keeping ids). Needed for 60+ paragraph pages or the JSON truncates.
 - Deploy to Render.
 - The security gate items in `CLAUDE.md`, which should be finished before the demo.
 
