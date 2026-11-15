@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Test article: paragraphs written as divs (science.org style)</title></head>
+<body>
+  <!-- Some publishers (e.g. science.org, built on Atypon) don't use <p> for article
+       text: every paragraph is a <div role="paragraph">. This page copies that
+       structure so Skimatic can be tested on it locally:
+         python3 -m http.server 5500   (from the testing/ folder)
+         http://localhost:5500/div-paragraphs.html -->
+  <header><nav><a href="#">Journals</a> · <a href="#">News</a> · <a href="#">Careers</a></nav></header>
+  <main>
+    <article>
+      <header>
+        <h1 property="name">How rumors travel through online networks</h1>
+        <div class="authors">A. Researcher, B. Scientist</div>
+      </header>
+      <section id="abstract" role="doc-abstract">
+        <h2>Abstract</h2>
+        <div role="paragraph">We studied how true and false stories spread across a large social network over several years. False stories reached more people, and reached them faster, than true ones in every category we examined.</div>
+      </section>
+      <section id="bodymatter" property="articleBody">
+        <div class="core-container">
+          <section id="sec-1">
+            <h2>Introduction</h2>
+            <div role="paragraph" id="p-1">Rumors have always moved quickly, but online networks change both their speed and their reach. Earlier work looked at single events, so it was unclear whether the patterns held in general.</div>
+            <div role="paragraph" id="p-2">We assembled a dataset of stories that independent fact-checking groups had rated as true or false, and traced every share of each story back to its source.</div>
+          </section>
+          <section id="sec-2">
+            <h2>Results</h2>
+            <div role="paragraph" id="p-3">False stories were about 70 percent more likely to be shared than true ones, and the effect was strongest for stories about politics.</div>
+            <div role="paragraph" id="p-4">Automated accounts shared true and false stories at similar rates, which suggests that people, not bots, drove most of the difference <a href="#ref-1">(1)</a>.</div>
+            <div role="paragraph" id="p-5">However, the study only covers one platform, and the fact-checkers chose which stories to rate, so some kinds of rumors may be missing from the sample.</div>
+          </section>
+          <section id="sec-3">
+            <h2>Discussion</h2>
+            <div role="paragraph" id="p-6">False stories tended to be more novel than true ones, and novelty attracts attention, which may explain why people pass them on more often.</div>
+          </section>
+        </div>
+      </section>
+    </article>
+  </main>
+  <aside><div class="promo">Subscribe to get unlimited access to every article in the journal archive today.</div></aside>
+  <footer>© Example Journal · Privacy · Terms</footer>
+</body>
+</html>
