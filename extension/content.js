@@ -14,6 +14,13 @@
   const MAX_PARAGRAPHS = 80;
   // The elements we treat as "article blocks" (one paragraph-sized chunk each).
   const BLOCK_SELECTOR = "p, li, blockquote, h1, h2, h3, h4";
+  // On the live page, some publishers don't use <p>: science.org (Atypon) writes
+  // every paragraph as <div role="paragraph">, other sites use plain <div>s.
+  // Readability turns those into <p> in its copy, so their text still matches;
+  // we just have to look for them on the page too. Only "leaf" divs count (no
+  // blocks inside), so a wrapper <div> around the whole article never matches.
+  const PAGE_BLOCK_SELECTOR = BLOCK_SELECTOR +
+    ", [role='paragraph'], div:not(:has(div, p, li, blockquote, section, article, table, ul, ol))";
   const html = document.documentElement;
 
   // ---------- 0. A tiny event hub so reading.js / speech.js can react ----------
@@ -131,10 +138,12 @@
   //  - Inside the reading view, everything came from Readability, so every leaf block counts.
   //  - On the page, a block counts when its text matches a block Readability extracted.
   function findBlocks(root) {
-    const candidates = [...root.querySelectorAll(BLOCK_SELECTOR)]
+    const inReader = !!root.closest("#scr-reader");
+    // The reading view holds Readability's clean copy (real <p>s); the live page may not.
+    const candidates = [...root.querySelectorAll(inReader ? BLOCK_SELECTOR : PAGE_BLOCK_SELECTOR)]
       .filter((el) => isLeafBlock(el) && !el.closest("[data-scr-ignore]"));
     const withText = candidates.filter((el) => SCR.normalize(el.textContent || ""));
-    if (root.closest("#scr-reader")) return withText;
+    if (inReader) return withText;
 
     const cached = !!lastParse;
     let matches = matchParsed(withText, getParsedArticle());
