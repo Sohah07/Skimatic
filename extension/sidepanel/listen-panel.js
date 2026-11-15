@@ -80,8 +80,26 @@
   control(next, "next");
 
   // ---------- Settings (stored with the reading settings) ----------
+  // Switching between "Highlighted sentences" and "Whole article" takes effect at
+  // once. Before, a paused or playing reading kept its old list, so ▶ went on
+  // reading the highlights after "Whole article" was picked (or the other way round).
   document.querySelectorAll('input[name="scope"]').forEach((input) =>
-    input.addEventListener("change", () => input.checked && scrReadingChange({ speechScope: input.value }, { immediate: true }))
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      scrReadingChange({ speechScope: input.value }, { immediate: true });
+      if (speech.state === "stopped") return;
+      const wasPlaying = speech.state === "playing";
+      await pageCall({ type: "SPEECH_CONTROL", action: "stop" });
+      speech = { ...speech, state: "stopped" };
+      if (wasPlaying) {
+        // Start the new list right away; the scope is passed directly so it
+        // doesn't depend on the settings write finishing first.
+        const r = scrReading();
+        const res = await pageCall({ type: "SPEAK", scope: input.value, rate: r.speechRate, voice: r.speechVoice });
+        if (!res.ok) errorText = speechError(res.error);
+      }
+      renderSpeech();
+    })
   );
   rate.addEventListener("input", () => scrReadingChange({ speechRate: Math.round(+rate.value * 10) / 10 }));
   voiceSelect.addEventListener("change", () => scrReadingChange({ speechVoice: voiceSelect.value }, { immediate: true }));
