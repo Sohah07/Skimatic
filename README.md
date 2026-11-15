@@ -55,6 +55,21 @@ Interactive API docs: http://localhost:8000/docs. Tests: `pytest`.
 
 Try prompts without the extension: `python prompt_lab.py` (uses `test_paragraphs.txt`).
 
+## Integration
+
+The `integration` branch starts from the team's `backend` branch, which already
+contains the `frontend` work (the extension), Blair's FastAPI server and Aarya's
+tuned prompts and gold answer keys. On top of that it hardens the backend for the demo: cache, one retry, chunking for long articles,
+request limits, a stricter filter and human error messages. The API contract did
+not change. Status and open items: [backend/HANDOFF.md](backend/HANDOFF.md).
+
+- Run: see "Run the backend" above. Without a key it runs in mock mode.
+- Tests: `cd backend && python -m pytest -q` (no key needed).
+- Score the prompts: `python prompt_lab.py --score` (1 Gemini call) and
+  `python prompt_lab.py --score-simplify` (5 calls). Add `MOCK_LLM=1` to try them for free.
+- `backend/standalone/` is Aarya's earlier prototype with a **different** API. It is
+  kept for reference only; the extension does not use it.
+
 ## Load the extension
 
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).

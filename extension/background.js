@@ -15,7 +15,19 @@ async function callBackend(path, body) {
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    // FastAPI sends errors as {"detail": "human message"} (not part of docs/API_CONTRACT.md).
+    // Show that message in the side panel; fall back to the raw status otherwise.
+    const text = await res.text();
+    let detail = null;
+    try {
+      detail = JSON.parse(text).detail;
+    } catch (e) {
+      // not JSON (proxy error page, etc.)
+    }
+    if (typeof detail === "string" && detail) throw new Error(detail);
+    throw new Error(`${path} -> HTTP ${res.status}: ${text}`);
+  }
   return res.json();
 }
 
