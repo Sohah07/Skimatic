@@ -452,8 +452,8 @@ async def simplify(req: SimplifyRequest, request: Request):
     if core is not None:
         log.info("simplify: cache hit")
     else:
-        log.info("simplify: cache miss")
         ratelimit.check("simplify", request)  # 6.1 only uncached sentences count
+        log.info("simplify: cache miss")
         try:
             core = await ask_once(key, lambda: ask_simplify(req.sentence, key))
         except Exception as e:
