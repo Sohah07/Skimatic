@@ -1,14 +1,24 @@
 # Render blueprint: New + > Blueprint > pick this repo. Then set GEMINI_API_KEY in the dashboard.
 services:
   - type: web
-    name: semantic-chunk-reader-api
+    name: skimatic-api
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    # --no-server-header: do not announce "uvicorn" on every response (security gate 4.3)
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --no-server-header
     healthCheckPath: /health
     envVars:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
+      # Optional: your extension's id from chrome://extensions, so only it may call the API (CORS)
+      - key: EXTENSION_ID
+        sync: false
+      # Render's proxy sits in front of us: read the visitor's real IP for rate limits
+      - key: TRUST_PROXY
+        value: "1"
+      # Optional cap on Gemini calls per day for the whole server (empty = no cap)
+      - key: DAILY_AI_BUDGET
+        sync: false

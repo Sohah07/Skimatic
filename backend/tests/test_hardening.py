@@ -466,8 +466,8 @@ def test_simplify_endpoint_filters(monkeypatch):
 @pytest.mark.parametrize("error, status, words", [
     (DAILY_429, 503, "daily limit"),
     (MINUTE_429, 503, "Wait a minute"),
-    (gemini_error(400, "INVALID_ARGUMENT", "API key not valid."), 502, "GEMINI_API_KEY"),
-    (gemini_error(404, "NOT_FOUND", "models/gemini-x is not found"), 502, "GEMINI_MODEL"),
+    (gemini_error(400, "INVALID_ARGUMENT", "API key not valid."), 502, "isn't available right now"),
+    (gemini_error(404, "NOT_FOUND", "models/gemini-x is not found"), 502, "isn't available right now"),
     (ValueError("Expecting value: line 1 column 1"), 502, "didn't answer properly"),
 ])
 def test_errors_become_human_messages(monkeypatch, error, status, words):
@@ -485,7 +485,7 @@ def test_errors_become_human_messages(monkeypatch, error, status, words):
 
 def test_health_has_model():
     body = client.get("/health").json()
-    assert body["status"] == "ok" and body["mock"] is True and body["model"] == "mock"
+    assert body == {"status": "ok", "mock": True}
 
 
 # --- prompt_lab scoring runs in mock mode ------------------------------------

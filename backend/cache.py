@@ -59,3 +59,46 @@ def make_key(model: str, prompt_template: str, payload) -> str:
         sort_keys=True,
     )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# --- Security gate 7.2: keep positions, never article text ---------------------
+# The backend promises it never stores what people read. So cached answers are
+# saved as (paragraph id, start, end, role): numbers only. On a repeat request
+# the sentences are cut back out of the text that request just sent. Positions
+# are counted in the whitespace-normalized text, because the cache key is too.
+
+def to_positions(highlights: list[dict], paragraphs) -> list[tuple]:
+    text_of = {p.id: normalize(p.text) for p in paragraphs}
+    positions = []
+    for h in highlights:
+        paragraph = text_of.get(h["paragraph_id"])
+        sentence = normalize(h["text"])
+        start = paragraph.find(sentence) if paragraph is not None else -1
+        if start != -1:
+            positions.append((h["paragraph_id"], start, start + len(sentence), h["role"]))
+    return positions
+
+
+def from_positions(positions: list[tuple], paragraphs) -> list[dict]:
+    text_of = {p.id: normalize(p.text) for p in paragraphs}
+    return [
+        {"paragraph_id": pid, "text": text_of[pid][start:end], "role": role}
+        for pid, start, end, role in positions
+        if pid in text_of
+    ]
+
+
+def core_to_positions(core: list[str], sentence: str) -> list[tuple]:
+    text, cursor, positions = normalize(sentence), 0, []
+    for piece in core:
+        piece = normalize(piece)
+        start = text.find(piece, cursor)
+        if start != -1:
+            positions.append((start, start + len(piece)))
+            cursor = start + len(piece)
+    return positions
+
+
+def core_from_positions(positions: list[tuple], sentence: str) -> list[str]:
+    text = normalize(sentence)
+    return [text[start:end] for start, end in positions]
