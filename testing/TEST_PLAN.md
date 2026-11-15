@@ -27,6 +27,12 @@ hidden text, footnote markers…) — note which sentences failed.
 - [ ] Running "Highlight" twice doesn't double-highlight
 - [ ] Works on a tab that was open before the extension was reloaded
 - [ ] Dark-mode site: highlights still readable
+- [ ] On a tab Skimatic wasn't used on, the panel says it can't read it; clicking the toolbar
+      icon (or Alt+Shift+H) on that tab fixes it
+- [ ] "Use on every website" asks Chrome for permission; turning it off removes it
+- [ ] `NODE_PATH=$(npm root -g) node testing/security/run.js` passes (backend running with
+      `MOCK_LLM=1`). It checks the manifest, the reading view sanitizer, forged highlights,
+      message sender checks, fingerprinting and the main features in a real Chromium.
 
 ## C. Picking the demo article
 Pick 2 articles that work perfectly and keep their URLs here. Have a backup

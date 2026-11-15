@@ -143,7 +143,11 @@
       if (state === "offline") throw new Error("Failed to fetch");
       return { status: "ok", mock: true };
     },
-    TAB_INFO: async () => ({ title: "Octopuses change color in their sleep – Example News", url: "https://example.com" }),
+    TAB_INFO: async () => ({ title: "Octopuses change color in their sleep – Example News", url: "https://example.com", access: true }),
+    REQUEST_ACCESS: async () => ({ requested: false }),
+    APPLY_READING: async () => null,
+    AUTO_APPLY_STATE: async () => ({ on: !!store.read().autoApply }),
+    AUTO_APPLY: async (msg) => { store.write({ ...store.read(), autoApply: msg.on === true }); return { on: msg.on === true }; },
     ANALYZE_ACTIVE_TAB: async () => {
       await wait(1200);
       if (state === "offline") throw new Error("Failed to fetch");
@@ -311,6 +315,8 @@
       onUpdated: { addListener() {} },
     },
     windows: { getCurrent: async () => ({ id: 1 }) },
+    // "Use on every website": the preview always says yes to the permission prompt.
+    permissions: { request: async () => true, remove: async () => true },
   };
 
   // Console helpers for trying states by hand.

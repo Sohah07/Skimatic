@@ -43,7 +43,12 @@
     saveTimer = null;
     const patch = pending;
     pending = null;
-    if (patch) await scrSaveReading(patch);
+    if (patch) {
+      await scrSaveReading(patch);
+      // Pages Skimatic already runs on follow storage.onChanged. The tab the reader is
+      // on may not have our scripts yet: the background adds them if Chrome allows it.
+      send({ type: "APPLY_READING" });
+    }
   }
   self.scrReadingChange = change;          // listen-panel.js uses these
   self.scrReading = () => reading;
@@ -131,6 +136,43 @@
     else setStatus(friendlyError(res.error), "error");
   });
   onPageMessage("READER_STATE", (m) => renderReader(m && m.open));
+
+  // ---------- Use on every website (opt-in) ----------
+  // Off by default: Skimatic only runs on pages the reader points it at. Turning this on
+  // asks Chrome for access to all sites (the permission prompt needs this click), then
+  // the background registers the page scripts for every site. Off removes both.
+  const ALL_SITES = ["http://*/*", "https://*/*"];
+  const autoBtn = $("auto-apply");
+  async function refreshAuto() {
+    const res = await send({ type: "AUTO_APPLY_STATE" });
+    setSwitch(autoBtn, !!(res.ok && res.data && res.data.on));
+  }
+  autoBtn.addEventListener("click", async () => {
+    if (isBusy(autoBtn)) return;
+    const on = !switchOn(autoBtn);
+    setBusy(autoBtn, true);
+    try {
+      if (on) {
+        let granted = false;
+        try {
+          granted = await chrome.permissions.request({ origins: ALL_SITES });
+        } catch (e) {
+          granted = false;
+        }
+        if (!granted) {
+          setStatus("Skimatic wasn't allowed to read all sites, so this stays off.", "error");
+          return;
+        }
+      }
+      const res = await send({ type: "AUTO_APPLY", on });
+      if (!res.ok) setStatus(friendlyError(res.error), "error");
+      if (!on) await chrome.permissions.remove({ origins: ALL_SITES }).catch(() => {});
+    } finally {
+      setBusy(autoBtn, false);
+      refreshAuto();
+    }
+  });
+  refreshAuto();
 
   // ---------- Render ----------
   function render() {

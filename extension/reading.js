@@ -41,6 +41,14 @@
   // ======================================================================
   const THEME_NAMES = Object.keys(SCR_THEMES);
 
+  const TEXT_VARS = ["--scr-font", "--scr-size", "--scr-ls", "--scr-ws", "--scr-lh", "--scr-lw"];
+  // The page can read <html>'s style, so a reader's settings are only written there
+  // while they are in use (text settings on, or the reading view open).
+  const textInUse = (s) => !!(s.enabled || reader);
+  function clearTextVars() {
+    TEXT_VARS.forEach((v) => html.style.removeProperty(v));
+  }
+
   function setTextVars(s) {
     const font = SCR_FONTS[s.font] || SCR_FONTS.site;
     html.style.setProperty("--scr-font", font.stack || "inherit");
@@ -87,12 +95,13 @@
     settings = s;
     applied = s;
     if (!changed(PAGE_KEYS)) return; // e.g. speech rate / voice: nothing to restyle
-    if (BUNDLED_FONTS[s.font]) injectFonts();
+    if (BUNDLED_FONTS[s.font] && textInUse(s)) injectFonts();
     // Styling needs to know which elements are the article, so find them now.
     const before = P.blocksIn(document.body)[0];
     if (s.enabled || s.focusMode) P.ensureBlocks(document.body);
     const blocksChanged = P.blocksIn(document.body)[0] !== before;
-    setTextVars(s);
+    if (textInUse(s)) setTextVars(s);
+    else clearTextVars();
     html.classList.toggle("scr-read", !!s.enabled);
     html.classList.toggle("scr-font", !!(SCR_FONTS[s.font] && SCR_FONTS[s.font].stack));
     applyTheme(s);
@@ -256,26 +265,90 @@
   // ======================================================================
   let reader = null; // { overlay, body, returnFocus, inerted: [] } while open
 
-  // Strip anything that could run code or submit data. Readability already cleans
-  // a lot; this is a second, explicit pass because we insert the HTML into the page.
-  // SVG animation elements can rewrite an attribute (e.g. a link's href) to a script URL.
-  const UNSAFE = "script, style, iframe, frame, frameset, form, object, embed, link, meta, base, noscript, " +
-    "animate, set, animateMotion, animateTransform, discard";
-  // Browsers ignore ASCII whitespace and control characters inside a URL scheme
-  // ("java\tscript:"), so strip them before checking.
-  const isScriptUrl = (v) => /^(javascript|vbscript):/i.test(String(v).replace(/[\u0000-\u0020\u007f]+/g, ""));
+  // The article HTML comes from the page, so it is rebuilt from an allowlist:
+  // DOMParser makes an inert copy, and for every allowed element we create a *fresh*
+  // element in the page with document.createElement, copying only a few safe
+  // attributes and the text. Nothing parsed is ever moved into the page. (Moving
+  // nodes parsed here with adoptNode keeps their inline on* handlers alive even after
+  // removeAttribute, and they then run in the page; a lazy <img data-src onerror>
+  // that never fired on the site would fire in the reader.)
+  //  - ALLOWED: recreated (without any attribute that isn't listed in ATTRS).
+  //  - DROP: removed with everything inside (code, embeds, forms, svg/math, media).
+  //  - anything else (section, custom elements, font...): unwrapped, its children kept.
+  const ALLOWED = new Set(("p h1 h2 h3 h4 h5 h6 ul ol li dl dt dd blockquote q cite a em strong b i u s " +
+    "small sub sup mark abbr time code pre kbd samp var br hr img figure figcaption " +
+    "table caption thead tbody tfoot tr th td div span").split(" "));
+  const DROP = new Set(("script style template iframe frame frameset object embed applet form input button " +
+    "select option optgroup textarea label fieldset legend datalist output svg math canvas video audio " +
+    "source track picture map area link meta base noscript head title dialog slot portal").split(" "));
+  const ATTRS = {
+    "*": ["title", "lang", "dir"],
+    a: ["href"],
+    img: ["src", "alt", "width", "height"],
+    td: ["colspan", "rowspan"],
+    th: ["colspan", "rowspan", "scope"],
+    ol: ["start", "reversed"],
+    time: ["datetime"],
+  };
+  const MAX_NODES = 20000; // a hostile page can't make us build a huge tree
+
+  // Absolute URL if its scheme is in `schemes`, else null. Readability already made
+  // URLs absolute; resolving again also drops "java\tscript:" style tricks.
+  function safeUrl(value, schemes) {
+    try {
+      const url = new URL(value, document.baseURI);
+      return schemes.includes(url.protocol) ? url.href : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function copyAttrs(from, to, tag) {
+    const allowed = [...ATTRS["*"], ...(ATTRS[tag] || [])];
+    for (const name of allowed) {
+      const value = from.getAttribute(name);
+      if (value === null) continue;
+      if (name === "href") {
+        const href = value.startsWith("#") ? value : safeUrl(value, ["http:", "https:", "mailto:"]);
+        if (href) to.setAttribute("href", href);
+        to.setAttribute("rel", "noopener noreferrer");
+      } else if (name === "src") {
+        const src = safeUrl(value, ["http:", "https:"]) ||
+          (/^data:image\/(png|jpe?g|gif|webp|avif);/i.test(value) ? value : null);
+        if (src) to.setAttribute("src", src);
+      } else if (["colspan", "rowspan", "start", "width", "height"].includes(name)) {
+        if (/^\d{1,4}$/.test(value)) to.setAttribute(name, value);
+      } else {
+        to.setAttribute(name, value.slice(0, 500));
+      }
+    }
+  }
+
   function cleanArticleNodes(articleHtml) {
     const doc = new DOMParser().parseFromString(articleHtml, "text/html");
-    doc.querySelectorAll(UNSAFE).forEach((el) => el.remove());
-    doc.body.querySelectorAll("*").forEach((el) => {
-      for (const attr of [...el.attributes]) {
-        const name = attr.name.toLowerCase();
-        const jsUrl = isScriptUrl(attr.value); // whatever the attribute's name
-        // ids are dropped too, so they can't clash with the page behind the dialog.
-        if (name.startsWith("on") || jsUrl || name === "id") el.removeAttribute(attr.name);
+    let budget = MAX_NODES;
+    const out = document.createDocumentFragment();
+    const build = (src, dest) => {
+      for (const node of src.childNodes) {
+        if (--budget < 0) return;
+        if (node.nodeType === Node.TEXT_NODE) {
+          dest.appendChild(document.createTextNode(node.data));
+          continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) continue; // comments, etc.
+        // An HTML element's localName is lowercase; svg/math children are dropped with their root.
+        const tag = node.namespaceURI === "http://www.w3.org/1999/xhtml" ? node.localName : "";
+        if (!tag || DROP.has(tag)) continue;
+        if (!ALLOWED.has(tag)) { build(node, dest); continue; } // unwrap
+        const el = document.createElement(tag);
+        copyAttrs(node, el, tag);
+        if (tag === "img" && !el.hasAttribute("src")) continue; // nothing safe to show
+        dest.appendChild(el);
+        build(node, el);
       }
-    });
-    return [...doc.body.childNodes].map((n) => document.adoptNode(n));
+    };
+    build(doc.body, out);
+    return [...out.childNodes];
   }
 
   function buildReader(article) {
@@ -351,15 +424,15 @@
   // remember its sentence and find the new mark for it on close.
   function focusMemo(el) {
     const mark = el && el.closest && el.closest("mark.scr-hl");
-    if (!mark) return { el };
-    return { el, sentence: SCR.normalize(P.marksFor(mark.dataset.scrId).map((m) => m.textContent).join("")) };
+    if (!mark || !SCR.isOwnMark(mark)) return { el };
+    return { el, sentence: SCR.normalize(P.marksFor(SCR.idOf(mark)).map((m) => m.textContent).join("")) };
   }
 
   function restoreFocus({ el, sentence }) {
     let target = el && el.isConnected ? el : null;
     if (!target && sentence) {
       target = P.firstMarks(document.body).find((m) =>
-        SCR.normalize(P.marksFor(m.dataset.scrId).map((x) => x.textContent).join("")) === sentence);
+        SCR.normalize(P.marksFor(SCR.idOf(m)).map((x) => x.textContent).join("")) === sentence);
     }
     if (target && target.focus) target.focus({ preventScroll: true });
   }
@@ -380,6 +453,8 @@
     if (!article) return { ok: false, open: false, error: "Couldn't find an article on this page." };
 
     const returnFocus = focusMemo(document.activeElement);
+    setTextVars(settings); // the reading view always uses the text settings
+    if (BUNDLED_FONTS[settings.font]) injectFonts();
     const { overlay, bar, body, close } = buildReader(article);
     styleReader(overlay);
     document.body.appendChild(overlay);
@@ -410,6 +485,7 @@
     overlay.remove();
     reader = null;
     html.classList.remove("scr-reader-open");
+    if (!textInUse(settings)) clearTextVars();
 
     P.setRoot(null);
     if (P.getHighlights().length) P.applyHighlights(P.getHighlights(), document.body);
@@ -439,7 +515,7 @@
   let seenFor = null;     // which highlight list `seen` belongs to
   let observer = null;
 
-  const keyOf = (mark) => SCR.normalize(P.marksFor(mark.dataset.scrId).map((m) => m.textContent).join(""));
+  const keyOf = (mark) => SCR.normalize(P.marksFor(SCR.idOf(mark)).map((m) => m.textContent).join(""));
 
   function observeMarks() {
     if (observer) observer.disconnect();
@@ -472,7 +548,7 @@
 
   function currentIdOf(marks) {
     if (jumpedId) {
-      const m = marks.find((x) => x.dataset.scrId === jumpedId);
+      const m = marks.find((x) => SCR.idOf(x) === jumpedId);
       const r = m && m.getBoundingClientRect();
       // The first 2s cover the smooth scroll on its way there.
       const onScreen = r && r.bottom > 0 && r.top < innerHeight;
@@ -487,13 +563,13 @@
       const dist = r.top <= target && r.bottom >= target ? 0 : Math.min(Math.abs(r.top - target), Math.abs(r.bottom - target));
       if (dist < bestDist) { best = m; bestDist = dist; }
     }
-    return best ? best.dataset.scrId : null;
+    return best ? SCR.idOf(best) : null;
   }
 
   function getProgress() {
     const root = P.getRoot();
     const all = P.firstMarks(root);
-    const marks = all.filter((m) => !P.isRoleHidden(m.dataset.scrRole)); // the shown ones
+    const marks = all.filter((m) => !P.isRoleHidden(SCR.roleOf(m))); // the shown ones
     const blocks = P.blocksIn(root);
     let wordsLeft = 0;
     let passed = 0;
@@ -510,7 +586,7 @@
       minutesLeft: Math.ceil(wordsLeft / WORDS_PER_MINUTE),
       percent: blocks.length ? Math.round((passed / blocks.length) * 100) : 0,
       // For the panel's key points list (checkmarks and "you are here"):
-      seenIds: [...seenSet].map((m) => m.dataset.scrId),
+      seenIds: [...seenSet].map((m) => SCR.idOf(m)),
       currentId: currentIdOf(marks),
     };
   }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Security fixture: forged highlights</title></head>
+<body>
+  <!-- Security fixture (testing/security/run.js). A real article plus a script that
+       fakes Skimatic highlights and "clicks" them. None of it may reach the AI, the
+       panel's key points list, or break the real highlights. -->
+  <article>
+    <h1>Octopuses change color in their sleep</h1>
+    <p>Researchers have found that octopuses change color even while asleep. In a study of four animals, skin patterns during quiet sleep differed from those during active sleep, a phase that lasts about a minute.</p>
+    <p>The finding adds to a growing list of ways that cephalopod sleep resembles our own. Earlier work showed that octopuses deprived of rest later sleep longer, a hallmark of sleep in mammals and birds.</p>
+    <p>The team suggests this active phase may resemble dreaming, replaying patterns the animals used while awake. "It looks like they are re-running the day," said the lead author.</p>
+    <p>Not everyone is convinced. Some biologists caution that the sample was small and that color changes could be simple muscle twitches rather than anything like a dream.</p>
+  </article>
+  <aside id="ugc"></aside>
+  <script>
+    // Called by the test after the real highlights are painted.
+    window.forge = (n) => {
+      const ugc = document.getElementById("ugc");
+      for (let i = 0; i < n; i++) {
+        const m = document.createElement("mark");
+        m.className = "scr-hl";
+        m.dataset.scrId = i === 0 ? 'a"]x' : "1";
+        m.dataset.scrRole = i === 1 ? "main) url(/hit?v=forged-role" : "main";
+        m.textContent = "Your session expired, call 1-800-SCAM " + Math.random();
+        ugc.append(m);
+        m.click();
+        m.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      }
+      // Also "click" the real highlights from page script.
+      document.querySelectorAll("article mark.scr-hl").forEach((m) => m.click());
+    };
+  </script>
+</body>
+</html>
