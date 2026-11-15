@@ -7,6 +7,7 @@ API shape:    see docs/API_CONTRACT.md
 import asyncio
 import logging
 import math
+import os
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
@@ -23,7 +24,15 @@ import prompts
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("skimatic")
 
-app = FastAPI(title="Skimatic API")
+# 4.2 The interactive API docs (/docs, /redoc, /openapi.json) list every endpoint
+# and field to anyone. Off by default; set ENABLE_DOCS=1 to use them locally.
+DOCS_ON = os.getenv("ENABLE_DOCS", "").strip() == "1"
+app = FastAPI(
+    title="Skimatic API",
+    docs_url="/docs" if DOCS_ON else None,
+    redoc_url="/redoc" if DOCS_ON else None,
+    openapi_url="/openapi.json" if DOCS_ON else None,
+)
 
 # --- Security gate item 2 ---------------------------------------------------
 # 2.2 Reject oversized bodies BEFORE reading them. Without this, FastAPI reads
@@ -162,16 +171,25 @@ class SimplifyResponse(BaseModel):
 ERRORS = {
     "quota": (503, "The AI's daily limit is used up. Try again later or use another API key."),
     "rate_limit": (503, "Too many AI requests right now. Wait a minute and try again."),
-    "bad_key": (502, "The AI key isn't working. Check GEMINI_API_KEY in backend/.env."),
-    "bad_model": (502, "The AI model isn't available. Check GEMINI_MODEL in backend/.env."),
+    # 4.1 Config problems get a neutral public message: anyone can call the
+    # backend, so it must not name settings or file paths. The fix-it hint goes
+    # to the server log instead (see FIX_HINTS), where only the team reads it.
+    "bad_key": (502, "The AI isn't available right now. Try again later."),
+    "bad_model": (502, "The AI isn't available right now. Try again later."),
 }
 GENERIC_ERROR = (502, "The AI didn't answer properly. Try again.")
+FIX_HINTS = {
+    "bad_key": "check GEMINI_API_KEY in backend/.env (or the Render environment)",
+    "bad_model": "check GEMINI_MODEL in backend/.env (or the Render environment)",
+}
 
 
 def llm_failure(exc: Exception) -> HTTPException:
     """Turn any LLM exception into an HTTPException with a safe, friendly message."""
     kind = llm.error_kind(exc)
     log.error("LLM call failed (%s): %r", kind, exc)  # the real reason, server-side only
+    if kind in FIX_HINTS:
+        log.error("To fix: %s", FIX_HINTS[kind])
     status, detail = ERRORS.get(kind, GENERIC_ERROR)
     return HTTPException(status_code=status, detail=detail)
 
@@ -187,7 +205,8 @@ def model_name() -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mock": llm.MOCK, "model": model_name()}
+    # 4.3 Only what the extension needs: no model name or other config details.
+    return {"status": "ok", "mock": llm.MOCK}
 
 
 def check_limits(paragraphs: list[Paragraph]) -> list[Paragraph]:

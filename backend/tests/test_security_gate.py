@@ -47,3 +47,28 @@ def test_normal_requests_still_work_under_the_cap():
     paras = [{"id": i, "text": f"Sentence number {i} is here. Another one follows."} for i in range(5)]
     r = client.post("/analyze", json={"paragraphs": paras})
     assert r.status_code == 200 and r.json()["highlights"]
+
+
+# --- Security gate item 4 ---------------------------------------------------
+
+def test_config_errors_do_not_name_settings_or_paths(monkeypatch, caplog):
+    from google.genai import errors
+
+    async def bad_key(_):
+        raise errors.ClientError(400, {"error": {"code": 400, "message": "API key not valid.",
+                                                 "status": "INVALID_ARGUMENT"}})
+    monkeypatch.setattr(main.llm, "analyze", bad_key)
+    r = client.post("/analyze", json={"paragraphs": [{"id": 0, "text": "A sentence long enough to send."}]})
+    assert r.status_code == 502
+    for leak in ("GEMINI", ".env", "backend/", "INVALID_ARGUMENT"):
+        assert leak not in r.text
+    assert "GEMINI_API_KEY" in caplog.text  # the team still sees the hint in the log
+
+
+def test_api_docs_are_off_by_default():
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404
+
+
+def test_health_shows_no_config():
+    assert client.get("/health").json() == {"status": "ok", "mock": True}
