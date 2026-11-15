@@ -43,7 +43,7 @@ Why each feature exists, and what we deliberately left out (e.g. "dyslexia fonts
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # server + test tools (Render installs requirements.txt only)
 cp .env.example .env               # then paste your GEMINI_API_KEY into .env
 uvicorn main:app --reload --port 8000
 ```
@@ -51,7 +51,7 @@ uvicorn main:app --reload --port 8000
 Open http://localhost:8000/health → `{"status":"ok","mock":false}`.
 No key yet? Leave it empty: the server runs in **mock mode** and returns fake (but
 correctly shaped) highlights, so the extension can be built without the AI.
-Interactive API docs: http://localhost:8000/docs. Tests: `pytest`.
+Interactive API docs (off by default for security): start with `ENABLE_DOCS=1 uvicorn main:app --reload --port 8000`, then open http://localhost:8000/docs. Tests: `pytest`.
 
 Try prompts without the extension: `python prompt_lab.py` (uses `test_paragraphs.txt`).
 

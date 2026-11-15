@@ -41,6 +41,17 @@ def _get_client():
 # Sorting Gemini errors into a few kinds we can act on
 # ---------------------------------------------------------------------------
 
+def describe(exc: Exception) -> str:
+    """A log-safe description of an error: its type, HTTP code and status only.
+
+    Security gate 7.1: an error MESSAGE could quote the request, i.e. article
+    text, and Render keeps logs. So we never log the message itself.
+    e.g. "ClientError 400 INVALID_ARGUMENT".
+    """
+    parts = [type(exc).__name__, getattr(exc, "code", None), getattr(exc, "status", None)]
+    return " ".join(str(p) for p in parts if p not in (None, ""))
+
+
 def error_kind(exc: Exception) -> str:
     """Put an exception into one bucket: quota, rate_limit, bad_key, bad_model,
     timeout, server or other.
@@ -119,7 +130,7 @@ async def ask_json(prompt: str) -> dict:
     except Exception as e:
         if not is_transient(e):
             raise
-        log.warning("Gemini call failed (%s: %s), retrying once", error_kind(e), e)
+        log.warning("Gemini call failed (%s: %s), retrying once", error_kind(e), describe(e))
         await asyncio.sleep(RETRY_DELAY_SECONDS)
         text = await _generate(prompt)
     return json.loads(text)

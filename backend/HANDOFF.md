@@ -84,3 +84,9 @@ Blair's spec asks for an in-memory dict. Use that. I have a working MongoDB Atla
 ## Questions
 
 Ask me. I know where the bodies are buried in the prompt.
+
+## Privacy (security gate item 7)
+
+- The backend never stores or logs article text. Logs hold counts, cache hit/miss and error *types* (e.g. `ClientError 400 INVALID_ARGUMENT`), never error messages, which could quote the request.
+- The cache keeps only positions `(paragraph id, start, end, role)` under a sha256 key. Sentences are cut back out of the article the extension sends again, so the cache contains no text.
+- Pitch line: "Skimatic never stores or logs what you read."

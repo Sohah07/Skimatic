@@ -7,30 +7,119 @@ API shape:    see docs/API_CONTRACT.md
 import asyncio
 import logging
 import math
+import os
+import re
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import cache
 import filters
 import llm
 import prompts
+import ratelimit
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("skimatic")
 
-app = FastAPI(title="Skimatic API")
+# 4.2 The interactive API docs (/docs, /redoc, /openapi.json) list every endpoint
+# and field to anyone. Off by default; set ENABLE_DOCS=1 to use them locally.
+DOCS_ON = os.getenv("ENABLE_DOCS", "").strip() == "1"
+app = FastAPI(
+    title="Skimatic API",
+    docs_url="/docs" if DOCS_ON else None,
+    redoc_url="/redoc" if DOCS_ON else None,
+    openapi_url="/openapi.json" if DOCS_ON else None,
+)
 
-# CORS: lets the extension (and a local test page) call this server.
-# For the hackathon we allow everything; lock it down to your extension ID later:
-#   allow_origins=["chrome-extension://<your-extension-id>"]
+# --- Security gate item 2 ---------------------------------------------------
+# 2.2 Reject oversized bodies BEFORE reading them. Without this, FastAPI reads
+# and parses the whole body (5 MB, 100 MB...) into memory before our own limits
+# run, so a few large requests could exhaust a small server. The biggest real
+# request (60,000 characters of article text) is well under 1 MB.
+MAX_BODY_BYTES = 1_000_000
+TOO_LARGE = {"detail": "This request is too large."}
+
+
+class BodySizeLimit:
+    """Plain ASGI middleware: 413 if the body is (or turns out to be) too big."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Fast path: the client told us the size up front.
+        length = dict(scope.get("headers") or []).get(b"content-length")
+        if length is not None:
+            try:
+                too_big = int(length) > self.max_bytes
+            except ValueError:
+                too_big = True  # a garbled Content-Length is not worth parsing
+            if too_big:
+                return await JSONResponse(TOO_LARGE, status_code=413)(scope, receive, send)
+
+            return await self.app(scope, receive, send)
+
+        # Slow path: no Content-Length (chunked upload). Read the body ourselves,
+        # stopping as soon as it passes the limit, then hand the (small) body on.
+        body, more = b"", True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":  # client went away
+                return
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+            if len(body) > self.max_bytes:
+                return await JSONResponse(TOO_LARGE, status_code=413)(scope, receive, send)
+
+        sent = False
+
+        async def replay():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()  # after the body: wait for disconnect as usual
+
+        await self.app(scope, replay, send)
+
+
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+
+
+# 2.1 Malformed requests get one plain sentence back. FastAPI's default 422 body
+# lists internal field paths and ECHOES THE WHOLE INPUT (a 25,000-character
+# sentence came back in full), which reveals the framework and wastes bandwidth.
+@app.exception_handler(RequestValidationError)
+async def bad_request_shape(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422, content={"detail": "The request wasn't in the expected format."}
+    )
+
+
+# 5.1 CORS: only Chrome extensions may call us from a browser. The extension
+# itself doesn't even need this (its background worker has host permission, so
+# Chrome lets it through without CORS), but allowing "*" let ANY website a
+# visitor opens call this server and spend the Gemini quota. Set EXTENSION_ID
+# (from chrome://extensions) to allow only our own extension.
+EXTENSION_ID = os.getenv("EXTENSION_ID", "").strip()
+EXTENSION_ORIGINS = (
+    rf"chrome-extension://{re.escape(EXTENSION_ID)}" if EXTENSION_ID
+    else r"chrome-extension://[a-p]{32}"  # any extension id (32 letters a-p)
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origin_regex=EXTENSION_ORIGINS,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 Role = Literal["main", "evidence", "background", "counter"]
@@ -91,16 +180,25 @@ class SimplifyResponse(BaseModel):
 ERRORS = {
     "quota": (503, "The AI's daily limit is used up. Try again later or use another API key."),
     "rate_limit": (503, "Too many AI requests right now. Wait a minute and try again."),
-    "bad_key": (502, "The AI key isn't working. Check GEMINI_API_KEY in backend/.env."),
-    "bad_model": (502, "The AI model isn't available. Check GEMINI_MODEL in backend/.env."),
+    # 4.1 Config problems get a neutral public message: anyone can call the
+    # backend, so it must not name settings or file paths. The fix-it hint goes
+    # to the server log instead (see FIX_HINTS), where only the team reads it.
+    "bad_key": (502, "The AI isn't available right now. Try again later."),
+    "bad_model": (502, "The AI isn't available right now. Try again later."),
 }
 GENERIC_ERROR = (502, "The AI didn't answer properly. Try again.")
+FIX_HINTS = {
+    "bad_key": "check GEMINI_API_KEY in backend/.env (or the Render environment)",
+    "bad_model": "check GEMINI_MODEL in backend/.env (or the Render environment)",
+}
 
 
 def llm_failure(exc: Exception) -> HTTPException:
     """Turn any LLM exception into an HTTPException with a safe, friendly message."""
     kind = llm.error_kind(exc)
-    log.error("LLM call failed (%s): %r", kind, exc)  # the real reason, server-side only
+    log.error("LLM call failed (%s): %s", kind, llm.describe(exc))  # type/code only, never the text
+    if kind in FIX_HINTS:
+        log.error("To fix: %s", FIX_HINTS[kind])
     status, detail = ERRORS.get(kind, GENERIC_ERROR)
     return HTTPException(status_code=status, detail=detail)
 
@@ -116,7 +214,8 @@ def model_name() -> str:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mock": llm.MOCK, "model": model_name()}
+    # 4.3 Only what the extension needs: no model name or other config details.
+    return {"status": "ok", "mock": llm.MOCK}
 
 
 def check_limits(paragraphs: list[Paragraph]) -> list[Paragraph]:
@@ -230,11 +329,12 @@ def chunk_key(chunk: list[Paragraph]) -> str:
 
 async def ask_chunk(chunk: list[Paragraph], key: str) -> list[dict]:
     """One Gemini call for one chunk. Caches the cleaned answer if it has anything in it."""
+    ratelimit.take_ai_call()  # 6.3 optional daily cap for the whole server
     result = await llm.analyze(chunk)
     raw = result.get("highlights", []) if isinstance(result, dict) else []
     highlights = filters.clean_highlights(raw, chunk)
     if highlights:  # an empty answer is a miss worth retrying, not something to remember
-        ANALYZE_CACHE.put(key, highlights)
+        ANALYZE_CACHE.put(key, cache.to_positions(highlights, chunk))  # 7.2: no text kept
     return highlights
 
 
@@ -245,8 +345,11 @@ async def analyze_chunk(chunk, limiter: asyncio.Semaphore, limit_errors: list) -
     analyzing again only pays for that chunk.
     """
     key = chunk_key(chunk)
-    highlights = ANALYZE_CACHE.get(key)
-    was_cached = highlights is not None
+    positions = ANALYZE_CACHE.get(key)
+    was_cached = positions is not None
+    # 7.2 The cache keeps only positions; cut the sentences back out of the
+    # article this request just sent.
+    highlights = cache.from_positions(positions, chunk) if was_cached else None
     if not was_cached:
         async with limiter:
             if limit_errors:  # an earlier chunk hit a 429: more calls would fail too
@@ -291,8 +394,8 @@ async def analyze_in_chunks(paragraphs: list[Paragraph]) -> list[dict]:
         # just send the reader into the same wall.
         raise next((e for e in errors if llm.error_kind(e) in ("quota", "rate_limit")), errors[0])
     if errors:
-        log.warning("analyze: %d of %d chunks failed (%r); returning the rest",
-                    len(errors), len(chunks), errors[0])
+        log.warning("analyze: %d of %d chunks failed (%s); returning the rest",
+                    len(errors), len(chunks), llm.describe(errors[0]))
     log.info("analyze: %d paragraphs, %d chunk(s), %d from cache",
              len(paragraphs), len(chunks), from_cache)
     return merged
@@ -303,8 +406,11 @@ async def analyze_in_chunks(paragraphs: list[Paragraph]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(req: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest, request: Request):
     paragraphs = check_limits(req.paragraphs)
+    # 6.1 Per-IP limit before any Gemini call; a fully cached article is free.
+    if any(ANALYZE_CACHE.get(chunk_key(c)) is None for c in split_into_chunks(paragraphs)):
+        ratelimit.check("analyze", request)
     try:
         highlights = await analyze_in_chunks(paragraphs)
     except Exception as e:  # LLM down, bad JSON, quota, ...
@@ -331,23 +437,26 @@ def cap_main(highlights: list[dict]) -> list[dict]:
 
 async def ask_simplify(sentence: str, key: str) -> list[str]:
     """One Gemini call for one sentence. Caches the cleaned answer if it isn't empty."""
+    ratelimit.take_ai_call()  # 6.3 optional daily cap for the whole server
     raw = await llm.simplify(sentence)
     core = filters.clean_core(raw.get("core", []) if isinstance(raw, dict) else [], sentence)
     if core:  # an empty answer is a miss worth retrying, not something to remember
-        SIMPLIFY_CACHE.put(key, core)
+        SIMPLIFY_CACHE.put(key, cache.core_to_positions(core, sentence))  # 7.2: no text kept
     return core
 
 
 @app.post("/simplify", response_model=SimplifyResponse)
-async def simplify(req: SimplifyRequest):
+async def simplify(req: SimplifyRequest, request: Request):
     if not req.sentence.strip():
         raise HTTPException(400, "No sentence was sent.")
     key = cache.make_key(model_name(), prompts.SIMPLIFY_PROMPT, cache.normalize(req.sentence))
 
-    core = SIMPLIFY_CACHE.get(key)
+    positions = SIMPLIFY_CACHE.get(key)
+    core = cache.core_from_positions(positions, req.sentence) if positions is not None else None
     if core is not None:
         log.info("simplify: cache hit")
     else:
+        ratelimit.check("simplify", request)  # 6.1 only uncached sentences count
         log.info("simplify: cache miss")
         try:
             core = await ask_once(key, lambda: ask_simplify(req.sentence, key))
