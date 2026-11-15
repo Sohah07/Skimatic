@@ -21,6 +21,7 @@ import cache
 import filters
 import llm
 import prompts
+import ratelimit
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("skimatic")
@@ -328,6 +329,7 @@ def chunk_key(chunk: list[Paragraph]) -> str:
 
 async def ask_chunk(chunk: list[Paragraph], key: str) -> list[dict]:
     """One Gemini call for one chunk. Caches the cleaned answer if it has anything in it."""
+    ratelimit.take_ai_call()  # 6.3 optional daily cap for the whole server
     result = await llm.analyze(chunk)
     raw = result.get("highlights", []) if isinstance(result, dict) else []
     highlights = filters.clean_highlights(raw, chunk)
@@ -401,8 +403,11 @@ async def analyze_in_chunks(paragraphs: list[Paragraph]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 @app.post("/analyze", response_model=AnalyzeResponse)
-async def analyze(req: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest, request: Request):
     paragraphs = check_limits(req.paragraphs)
+    # 6.1 Per-IP limit before any Gemini call; a fully cached article is free.
+    if any(ANALYZE_CACHE.get(chunk_key(c)) is None for c in split_into_chunks(paragraphs)):
+        ratelimit.check("analyze", request)
     try:
         highlights = await analyze_in_chunks(paragraphs)
     except Exception as e:  # LLM down, bad JSON, quota, ...
@@ -429,6 +434,7 @@ def cap_main(highlights: list[dict]) -> list[dict]:
 
 async def ask_simplify(sentence: str, key: str) -> list[str]:
     """One Gemini call for one sentence. Caches the cleaned answer if it isn't empty."""
+    ratelimit.take_ai_call()  # 6.3 optional daily cap for the whole server
     raw = await llm.simplify(sentence)
     core = filters.clean_core(raw.get("core", []) if isinstance(raw, dict) else [], sentence)
     if core:  # an empty answer is a miss worth retrying, not something to remember
@@ -437,7 +443,7 @@ async def ask_simplify(sentence: str, key: str) -> list[str]:
 
 
 @app.post("/simplify", response_model=SimplifyResponse)
-async def simplify(req: SimplifyRequest):
+async def simplify(req: SimplifyRequest, request: Request):
     if not req.sentence.strip():
         raise HTTPException(400, "No sentence was sent.")
     key = cache.make_key(model_name(), prompts.SIMPLIFY_PROMPT, cache.normalize(req.sentence))
@@ -447,6 +453,7 @@ async def simplify(req: SimplifyRequest):
         log.info("simplify: cache hit")
     else:
         log.info("simplify: cache miss")
+        ratelimit.check("simplify", request)  # 6.1 only uncached sentences count
         try:
             core = await ask_once(key, lambda: ask_simplify(req.sentence, key))
         except Exception as e:
