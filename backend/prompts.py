@@ -22,11 +22,11 @@ Return a list of highlights. Each highlight has:
     "not significant", "small sample", "should bear in mind".
 
 How many:
-- Give about 1 highlight to every paragraph that contains a claim, a finding, a setup or a
-  caveat, and 2 when a paragraph has two strong ones. Do not skip a paragraph like that.
-- At most 2 highlights per paragraph.
+- Be selective: pick only the sentences a busy reader must not miss. Most paragraphs
+  get no highlight at all.
+- At most 1 highlight per paragraph.
 - Paragraphs that only describe methods, procedures, ethics approval or statistics software get none.
-- Overall, about 15 to 20 percent of all sentences.
+- Overall, about 10 percent of all sentences, and never more than 12 highlights in total.
 - Highlights must not overlap; never pick the same sentence twice.
 - If nothing is worth highlighting, return {{"highlights": []}}.
 
