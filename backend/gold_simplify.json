@@ -1,0 +1,177 @@
+[
+  {
+    "sentence": "High prevalence of developmental disorders that is affecting patient quality of life and is costly for society is a world-wide problem.1,2",
+    "core": [
+      "High prevalence of developmental disorders",
+      "is",
+      "a world-wide problem"
+    ]
+  },
+  {
+    "sentence": "In particular, the prevalence of sleep disturbances among children with autism spectrum disorder (ASD) is higher than that among typical children.10",
+    "core": [
+      "the prevalence of sleep disturbances",
+      "is higher",
+      "than that among typical children"
+    ]
+  },
+  {
+    "sentence": "It is plausible that sleep deprivation aggravates problematic behaviours and has a negative impact on brain development.",
+    "core": [
+      "sleep deprivation",
+      "aggravates problematic behaviours",
+      "has a negative impact on brain development"
+    ]
+  },
+  {
+    "sentence": "Reports indicate that daytime physical activity (PA) is associated with the quantity and quality of sleep among healthy children and adolescents.16,17",
+    "core": [
+      "daytime physical activity (PA)",
+      "is associated with",
+      "the quantity and quality of sleep"
+    ]
+  },
+  {
+    "sentence": "Because assessing whether high levels of daytime PA improves the sleep of ASD children is important, we investigated the association between daytime PA and the quantity and quality of sleep among pre-schoolers with ASD.",
+    "core": [
+      "we",
+      "investigated",
+      "the association between daytime PA and the quantity and quality of sleep"
+    ]
+  },
+  {
+    "sentence": "Furthermore, we assessed within-person associations between PA and sleep at each period.",
+    "core": [
+      "we",
+      "assessed",
+      "within-person associations between PA and sleep"
+    ]
+  },
+  {
+    "sentence": "Sleep percentage was significantly higher in controls (92.5%) than in ASD children (88.0%), and snooze time was significantly longer in ASD children (10.0 min) than in controls (8.0 min).",
+    "core": [
+      "Sleep percentage",
+      "was significantly higher",
+      "in controls (92.5%) than in ASD children (88.0%)"
+    ]
+  },
+  {
+    "sentence": "There were no significant between-subject correlations in either control or ASD children.",
+    "core": [
+      "no significant between-subject correlations",
+      "in either control or ASD children"
+    ]
+  },
+  {
+    "sentence": "Sleep percentage for control children following the active morning was significantly higher (median: 93.2%) than that following the inactive morning (median: 91.7%), whereas sleep percentage in ASD children was not modulated by PA during any time period.",
+    "core": [
+      "Sleep percentage for control children",
+      "was significantly higher",
+      "following the active morning"
+    ]
+  },
+  {
+    "sentence": "Sleep onset for ASD children on the day of the active morning (median: 9:21 pm) was earlier than that on the day of the inactive morning (median: 9:57 pm), and this pattern was also true following the active (median: 9:39 pm) and the inactive (median: 10:24 pm) afternoons.",
+    "core": [
+      "Sleep onset for ASD children",
+      "was earlier",
+      "on the day of the active morning"
+    ]
+  },
+  {
+    "sentence": "The key finding was that PA in the morning and afternoon resulted in earlier sleep onsets in ASD children and that PA in the morning resulted in significantly higher sleep percentages in control children.",
+    "core": [
+      "PA in the morning and afternoon",
+      "resulted in",
+      "earlier sleep onsets in ASD children"
+    ]
+  },
+  {
+    "sentence": "The earlier sleep onsets found in ASD children after daytime PA is sign of improvement, although the mechanism remains unknown.",
+    "core": [
+      "The earlier sleep onsets",
+      "is sign of improvement",
+      "the mechanism remains unknown"
+    ]
+  },
+  {
+    "sentence": "Consequently, daytime PA might regulate the circadian rhythms among ASD children through increased serotonin and melatonin secretion.",
+    "core": [
+      "daytime PA",
+      "might regulate the circadian rhythms",
+      "through increased serotonin and melatonin secretion"
+    ]
+  },
+  {
+    "sentence": "It is important to educate parents regarding the importance of regular outdoor activities for maintaining favourable sleep–wake cycles.",
+    "core": [
+      "It is important to educate parents",
+      "regular outdoor activities",
+      "favourable sleep–wake cycles"
+    ]
+  },
+  {
+    "sentence": "However, we should bear in mind that PA might also be effective for children with sleep disturbances.",
+    "core": [
+      "PA",
+      "might also be effective",
+      "for children with sleep disturbances"
+    ]
+  },
+  {
+    "sentence": "Although daytime PA impacted different aspects of sleep in control and ASD children, high levels of daytime PA had positive effects on sleep for both groups.",
+    "core": [
+      "high levels of daytime PA",
+      "had positive effects on sleep",
+      "for both groups"
+    ]
+  },
+  {
+    "sentence": "Evening PA was not associated with sleep quantity or quality in either group of children.",
+    "core": [
+      "Evening PA",
+      "was not associated with",
+      "sleep quantity or quality"
+    ]
+  },
+  {
+    "sentence": "Japanese infants and toddlers (0–36 months) were reported to have the lowest total amount of sleep among 17 countries in Asia, the Western Pacific, Europe, and North America.39",
+    "core": [
+      "Japanese infants and toddlers",
+      "have the lowest total amount of sleep",
+      "among 17 countries"
+    ]
+  },
+  {
+    "sentence": "Daytime PA might play an important role in improving sleep disturbances in Japanese children, regardless of whether or not they have developmental disorders.",
+    "core": [
+      "Daytime PA",
+      "might play an important role",
+      "in improving sleep disturbances in Japanese children"
+    ]
+  },
+  {
+    "sentence": "Second, the sample size was relatively small, especially for the control group.",
+    "core": [
+      "the sample size",
+      "was relatively small",
+      "especially for the control group"
+    ]
+  },
+  {
+    "sentence": "Third, measurements for the two groups were not conducted during the same season.",
+    "core": [
+      "measurements for the two groups",
+      "were not conducted",
+      "during the same season"
+    ]
+  },
+  {
+    "sentence": "High-level morning and afternoon activity should be encouraged to improve the sleep quality of children with ASD.",
+    "core": [
+      "High-level morning and afternoon activity",
+      "should be encouraged",
+      "to improve the sleep quality of children with ASD"
+    ]
+  }
+]
