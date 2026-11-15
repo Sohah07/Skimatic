@@ -73,7 +73,7 @@
   function forgetIfNavigated() {
     if (!lastParse || lastParseUrl === pageKey()) return;
     lastParse = null;
-    if (lastHighlights.length && !document.querySelector("mark.scr-hl")) lastHighlights = [];
+    if (lastHighlights.length && !SCR.marksIn(document).length) lastHighlights = [];
   }
 
   // Readability's article HTML as a detached document (scripts never run in it).
@@ -219,14 +219,27 @@
   }
 
   // ---------- 4. Colors (saved per user, same on every page) ----------
-  function applyColors(colors) {
-    for (const [role, color] of Object.entries(colors)) {
+  // Written onto <html> only once this page has highlights: the page can read <html>'s
+  // style, and a reader's own colors shouldn't be shown to every site (fingerprinting).
+  // Only well-formed #rrggbb values for known roles are ever written.
+  let colors = null;       // loaded from storage
+  let colorsShown = false; // written onto <html> yet?
+  const HEX = /^#[0-9a-f]{6}$/i;
+  function applyColors() {
+    if (!colors || !colorsShown) return;
+    for (const role of SCR_ROLE_KEYS) {
+      const color = HEX.test(colors[role]) ? colors[role] : SCR_DEFAULT_COLORS[role];
       html.style.setProperty(`--scr-color-${role}`, color);
     }
   }
-  scrLoadColors().then(applyColors);
+  function showColors() {
+    colorsShown = true;
+    applyColors();
+  }
+  const loadColors = () => scrLoadColors().then((c) => { colors = c; applyColors(); });
+  loadColors();
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && changes.colors) scrLoadColors().then(applyColors);
+    if (area === "sync" && changes.colors) loadColors();
   });
 
   // ---------- 5. Which roles are hidden ----------
@@ -303,7 +316,7 @@
     // the parent of the first page mark. The reading view sets its own values.
     const notReader = (el) => !el.closest("#scr-reader");
     const block = [...document.querySelectorAll(".scr-block")].find(notReader);
-    const mark = [...document.querySelectorAll("mark.scr-hl")].find(notReader);
+    const mark = SCR.marksIn(document).find(notReader);
     const el = block || (mark && mark.parentElement);
     const dark = !!el && luminance(backgroundOf(el)) < DARK_LUMINANCE;
     html.classList.toggle("scr-dark-site", dark);
@@ -311,16 +324,21 @@
   }
 
   // ---------- 6. Paint highlights from the backend ----------
+  // Only our own marks count (SCR.marksIn): a page can add <mark class="scr-hl"> of
+  // its own, and those must never show up as key points or trigger the AI. Ids come
+  // from highlight.js's private map, never from a selector built from page data.
+  const idOf = (mark) => SCR.idOf(mark);
+  const roleOf = (mark) => SCR.roleOf(mark);
   function marksFor(id) {
-    return [...document.querySelectorAll(`mark.scr-hl[data-scr-id="${id}"]`)];
+    return SCR.marksIn(document).filter((m) => idOf(m) === String(id));
   }
 
   // The first <mark> of each highlight, in document order.
   function firstMarks(root = getRoot()) {
     const seen = new Set();
-    return [...root.querySelectorAll("mark.scr-hl")].filter((m) => {
-      if (seen.has(m.dataset.scrId)) return false;
-      seen.add(m.dataset.scrId);
+    return SCR.marksIn(root).filter((m) => {
+      if (seen.has(idOf(m))) return false;
+      seen.add(idOf(m));
       return true;
     });
   }
@@ -337,31 +355,41 @@
   // Keyboard + screen readers: the first mark of each highlight acts as a button.
   // When its role is hidden it goes back to being plain text (not tabbable).
   function decorateMark(mark) {
-    if (isRoleHidden(mark.dataset.scrRole)) {
+    if (isRoleHidden(roleOf(mark))) {
       ["tabindex", "role", "aria-pressed", "aria-label"].forEach((a) => mark.removeAttribute(a));
       return;
     }
-    const sentence = SCR.normalize(sentenceOf(mark.dataset.scrId));
+    const sentence = SCR.normalize(sentenceOf(idOf(mark)));
     // Most sentences already end in . ! or ?; only add a full stop when missing.
     const stop = /[.!?…]["'”’)\]]*$/.test(sentence) ? "" : ".";
     mark.tabIndex = 0;
     mark.setAttribute("role", "button");
     mark.setAttribute("aria-pressed", String(mark.dataset.scrOriginal !== undefined));
     mark.setAttribute("aria-label",
-      `${roleLabel(mark.dataset.scrRole)}: ${sentence}${stop} Press Enter for the sentence backbone.`);
+      `${roleLabel(roleOf(mark))}: ${sentence}${stop} Press Enter for the sentence backbone.`);
   }
 
   function refreshMarkButtons() {
-    document.querySelectorAll("mark.scr-hl").forEach((m) => {
+    SCR.marksIn(document).forEach((m) => {
       if (m.hasAttribute("role")) ["tabindex", "role", "aria-pressed", "aria-label"].forEach((a) => m.removeAttribute(a));
     });
     firstMarks(document).forEach(decorateMark);
   }
 
+  // Which highlight (index in lastHighlights) each painted id is. SIMPLIFY sends only
+  // that index; the background looks the sentence up itself (see background.js).
+  let indexOfId = new Map();
+
   function applyHighlights(highlights, root = getRoot()) {
     clearAll();
     lastHighlights = highlights;
-    const ids = SCR.highlightAll(highlights.map((h) => ({ text: h.text, role: h.role })), root);
+    // Roles were checked by the background; check again, they become CSS selectors.
+    const ids = SCR.highlightAll(highlights.map((h) => ({
+      text: h.text, role: SCR_ROLE_KEYS.includes(h.role) ? h.role : "",
+    })), root);
+    indexOfId = new Map();
+    ids.forEach((id, i) => { if (id) indexOfId.set(id, i); });
+    showColors();
     refreshMarkButtons();
     checkDarkSite();
     const found = ids.filter(Boolean).length;
@@ -372,7 +400,7 @@
 
   function clearAll() {
     emit("cleared");
-    document.querySelectorAll("mark.scr-hl[data-scr-original]").forEach(unsimplify);
+    SCR.marksIn(document).filter((m) => m.dataset.scrOriginal !== undefined).forEach(unsimplify);
     // Marks can be on the page or inside the reading view; clear both.
     SCR.clearHighlights(document.body);
   }
@@ -411,11 +439,13 @@
   // What the panel needs to draw the list: id, role and the full sentence of every
   // highlight in the current root (the page, or the reading view while it's open).
   function highlightsState() {
-    const items = firstMarks().map((m) => ({
-      id: m.dataset.scrId,
-      role: m.dataset.scrRole,
-      text: SCR.normalize(sentenceOf(m.dataset.scrId)),
-    }));
+    const items = firstMarks()
+      .filter((m) => SCR_ROLE_KEYS.includes(roleOf(m)))
+      .map((m) => ({
+        id: idOf(m),
+        role: roleOf(m),
+        text: SCR.normalize(sentenceOf(idOf(m))),
+      }));
     return { items, hiddenRoles: hiddenRoleList() };
   }
 
@@ -469,9 +499,9 @@
     let marks = marksFor(id).filter((m) => root.contains(m));
     if (marks.length || !msg.role || !msg.text) return marks;
     const same = firstMarks(root).filter((m) =>
-      m.dataset.scrRole === msg.role && SCR.normalize(sentenceOf(m.dataset.scrId)) === msg.text);
+      roleOf(m) === msg.role && SCR.normalize(sentenceOf(idOf(m))) === msg.text);
     const hit = same[(Number(msg.n) || 1) - 1];
-    return hit ? marksFor(hit.dataset.scrId).filter((m) => root.contains(m)) : [];
+    return hit ? marksFor(idOf(hit)).filter((m) => root.contains(m)) : [];
   }
 
   const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -481,8 +511,8 @@
     const marks = findJumpMarks(msg);
     if (!marks.length) return { ok: false, error: "That highlight is no longer on the page." };
     const first = marks[0];
-    const id = first.dataset.scrId;
-    const role = first.dataset.scrRole;
+    const id = idOf(first);
+    const role = roleOf(first);
     const reveal = isRoleHidden(role) ? unhideRole(role) : null;
 
     // 1. Scroll it to the middle of the screen (inside the reading view when open:
@@ -518,16 +548,27 @@
     delete mark.dataset.scrOriginal;
   }
 
+  // Find `piece` in `text` from `from` on, treating any run of whitespace as equal
+  // (the backend saw the tidied sentence; the page may have line breaks or nbsp).
+  function findLoose(text, piece, from) {
+    const words = piece.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return null;
+    const re = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
+    re.lastIndex = from;
+    const m = re.exec(text);
+    return m ? { at: m.index, end: m.index + m[0].length } : null;
+  }
+
   function renderCore(marks, core) {
     // One sentence may be split over several <mark>s; work on the joined text.
     const full = marks.map((m) => m.textContent).join("");
     const isCore = new Array(full.length).fill(false);
     let from = 0;
     for (const piece of core) {
-      const at = full.indexOf(piece, from);
-      if (at < 0) continue;
-      isCore.fill(true, at, at + piece.length);
-      from = at + piece.length;
+      const hit = findLoose(full, String(piece), from);
+      if (!hit) continue;
+      isCore.fill(true, hit.at, hit.end);
+      from = hit.end;
     }
     let pos = 0;
     for (const mark of marks) {
@@ -554,8 +595,8 @@
   }
 
   async function toggleBackbone(mark) {
-    if (isRoleHidden(mark.dataset.scrRole)) return;
-    const marks = marksFor(mark.dataset.scrId);
+    if (isRoleHidden(roleOf(mark))) return;
+    const marks = marksFor(idOf(mark));
 
     if (mark.dataset.scrOriginal !== undefined) { // already simplified -> toggle back
       marks.forEach(unsimplify);
@@ -564,12 +605,14 @@
       return;
     }
     if (mark.classList.contains("scr-loading")) return; // a request is already running
-    const sentence = marks.map((m) => m.textContent).join("");
+    const index = indexOfId.get(idOf(mark));
+    if (index === undefined) return;
     marks.forEach((m) => m.classList.add("scr-loading"));
     announce("Simplifying…");
     try {
-      const res = await chrome.runtime.sendMessage({ type: "SIMPLIFY", sentence });
-      if (res && res.ok) {
+      // Only the index: the page can't choose what text is sent to the AI.
+      const res = await chrome.runtime.sendMessage({ type: "SIMPLIFY", index });
+      if (res && res.ok && res.data && Array.isArray(res.data.core)) {
         renderCore(marks, res.data.core);
         setPressed(marks, true);
         announce(`Backbone: ${res.data.core.join(" ")}`);
@@ -585,16 +628,19 @@
     }
   }
 
+  // Only real clicks and key presses on our own marks: a page script can call
+  // mark.click() or dispatch fake events, and must not be able to trigger the AI.
   document.addEventListener("click", (e) => {
+    if (!e.isTrusted) return;
     const mark = e.target.closest && e.target.closest("mark.scr-hl");
-    if (mark) toggleBackbone(mark);
+    if (mark && SCR.isOwnMark(mark)) toggleBackbone(mark);
   });
 
   // Enter / Space on a focused highlight does the same as a click.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
+    if (!e.isTrusted || (e.key !== "Enter" && e.key !== " ")) return;
     const mark = e.target.closest && e.target.closest('mark.scr-hl[role="button"]');
-    if (!mark || e.target !== mark) return;
+    if (!mark || e.target !== mark || !SCR.isOwnMark(mark)) return;
     e.preventDefault(); // Space would scroll the page, Enter might follow a parent link
     toggleBackbone(mark);
   });
@@ -611,7 +657,7 @@
     console.log("[SCR] extracted", article.paragraphs.length, "paragraphs", article);
     return { ok: true, data: article };
   };
-  handlers.APPLY_HIGHLIGHTS = (msg) => ({ ok: true, data: applyHighlights(msg.highlights) });
+  handlers.APPLY_HIGHLIGHTS = (msg) => ({ ok: true, data: applyHighlights(Array.isArray(msg.highlights) ? msg.highlights : []) });
   handlers.SET_VISIBLE = (msg) => {
     html.classList.toggle("scr-hidden", !msg.visible);
     refreshMarkButtons();
@@ -619,6 +665,7 @@
     return { ok: true };
   };
   handlers.SET_ROLE_VISIBLE = (msg) => {
+    if (!SCR_ROLE_KEYS.includes(msg.role)) return { ok: false, error: "Unknown role" };
     hiddenBy.user[msg.visible ? "delete" : "add"](msg.role);
     applyRoleClasses();
     return { ok: true };
@@ -654,8 +701,13 @@
     highlights: highlightsState(), // for the key points list
   });
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    const handler = handlers[msg && msg.type];
+  // Only the extension itself (the background, via tabs.sendMessage) talks to us.
+  // Messages that other content scripts send with runtime.sendMessage (e.g. SIMPLIFY,
+  // or one from a page in another tab) are not for us.
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!sender || sender.id !== chrome.runtime.id || sender.tab) return false;
+    const type = msg && msg.type;
+    const handler = typeof type === "string" && Object.hasOwn(handlers, type) ? handlers[type] : null;
     if (!handler) return false;
     let reply;
     try {

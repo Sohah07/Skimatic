@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Security fixture: fingerprinting</title></head>
+<body>
+  <!-- Security fixture (testing/security/run.js). What can a page learn about the
+       reader's Skimatic settings without them using Skimatic here? -->
+  <p>Just a page that looks around.</p>
+  <script>
+    window.probe = async (extId) => {
+      const html = document.documentElement;
+      let font = "blocked";
+      try { const r = await fetch(`chrome-extension://${extId}/fonts/lexend-400.woff2`); font = "status " + r.status; } catch (e) { font = "blocked"; }
+      return { style: html.getAttribute("style"), className: html.className, fontFetch: font };
+    };
+  </script>
+</body>
+</html>

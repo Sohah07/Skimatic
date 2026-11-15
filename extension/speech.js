@@ -42,9 +42,9 @@
   function highlightQueue(root) {
     P.ensureBlocks(root); // so focus mode can follow along block by block
     return P.firstMarks(root)
-      .filter((m) => !P.isRoleHidden(m.dataset.scrRole))
+      .filter((m) => !P.isRoleHidden(SCR.roleOf(m)))
       .map((first) => {
-        const marks = P.marksFor(first.dataset.scrId);
+        const marks = P.marksFor(SCR.idOf(first));
         const text = SCR.normalize(marks.map((m) => m.textContent).join(""));
         return { text, marks, block: first.closest(".scr-block") };
       });

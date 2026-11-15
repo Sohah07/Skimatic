@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Security fixture: reader view XSS</title></head>
+<body>
+  <!-- Security fixture (testing/security/run.js). Markup an attacker could leave in
+       user content (comments, profiles). Every handler below is inert on the live page,
+       or fires before the reader opens. None of them may fire inside Skimatic's
+       reading view. A handler that fires reports to /hit and logs "HIT ...". -->
+  <script>
+    document.cookie = "session=SECRET123";
+    window.hit = (v) => { console.log("HIT " + v + " reader=" + !!document.getElementById("scr-reader")); fetch("/hit?v=" + encodeURIComponent(v)); };
+  </script>
+  <article>
+    <h1>How octopuses sleep, and what that tells us</h1>
+    <p>Researchers have found that octopuses change color even while asleep. In a study of four animals, skin patterns during quiet sleep differed from those during active sleep, a phase that lasts about a minute.</p>
+    <p>The finding adds to a growing list of ways that cephalopod sleep resembles our own. Earlier work showed that octopuses deprived of rest later sleep longer, a hallmark of sleep in mammals and birds.</p>
+    <p>A lazy image that never loads on the page: <img data-src="/missing-lazy.png" alt="lazy" onerror="hit('lazy-img')"> but would load in a reader that copies data-src to src.</p>
+    <p>An image that is broken on purpose: <img src="/broken.png" alt="broken" onerror="if(document.getElementById('scr-reader'))hit('direct-img')"> and keeps going with more words so Readability counts it.</p>
+    <details ontoggle="if(document.getElementById('scr-reader'))hit('details-toggle')" open><summary>More</summary><p>Details text that is long enough to be counted as a paragraph by the parser.</p></details>
+    <p>Links: a <a href="https://example.com/safe">safe link</a>, a <a href="java&#9;script:hit('js-link')">tricky link</a> and a <a href=" javascript:hit('js-link2')">spaced link</a> in the middle of a sentence.</p>
+    <p>An SVG with an image inside: <svg width="10" height="10"><foreignObject><img src="/svg-broken.png" onerror="if(document.getElementById('scr-reader'))hit('svg-img')"></foreignObject></svg> and more words after it to fill.</p>
+    <p>A custom element: <x-widget onclick="hit('custom')">custom element text that stays as plain text</x-widget> in the article body here.</p>
+    <p>Some autofocus bait: <input autofocus onfocus="if(document.getElementById('scr-reader'))hit('input-focus')"> and a final sentence to close the paragraph.</p>
+    <p>The team suggests this active phase may resemble dreaming, replaying patterns the animals used while awake, though not everyone is convinced yet.</p>
+  </article>
+</body>
+</html>

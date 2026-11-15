@@ -118,7 +118,7 @@
     const cue = CUES[it.role] || {};
     li.dataset.id = it.id;
     li.dataset.role = it.role;
-    btn.style.setProperty("--c", `var(--role-${it.role})`);
+    if (ROLE[it.role]) btn.style.setProperty("--c", `var(--role-${it.role})`); // known roles only
     btn.style.setProperty("--cue-style", cue.style || "solid");
     btn.style.setProperty("--cue-width", cue.thickness || "2px");
     btn.querySelector(".kp-role").textContent = role.label;
@@ -313,9 +313,17 @@
     else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
   }
 
+  // The list comes from the page, so keep only well-formed items: a known role (it
+  // becomes a CSS variable name below), a numeric id, and a string sentence.
+  function cleanItems(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 500)
+      .filter((it) => it && ROLE[it.role] && /^\d{1,10}$/.test(String(it.id)) && typeof it.text === "string")
+      .map((it) => ({ id: String(it.id), role: it.role, text: it.text.slice(0, 2000) }));
+  }
+
   function applyHighlights(m) {
-    items = (m && m.items) || [];
-    hidden = new Set((m && m.hiddenRoles) || []);
+    items = cleanItems(m && m.items);
+    hidden = new Set(((m && m.hiddenRoles) || []).filter((r) => ROLE[r]));
     if (!items.length) { seen = new Set(); currentId = null; }
     if (statusIsError) setKpStatus(""); // the list changed: an old error may no longer apply
     render();
