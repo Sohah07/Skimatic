@@ -9,8 +9,10 @@ import logging
 import math
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import cache
@@ -22,6 +24,75 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 log = logging.getLogger("skimatic")
 
 app = FastAPI(title="Skimatic API")
+
+# --- Security gate item 2 ---------------------------------------------------
+# 2.2 Reject oversized bodies BEFORE reading them. Without this, FastAPI reads
+# and parses the whole body (5 MB, 100 MB...) into memory before our own limits
+# run, so a few large requests could exhaust a small server. The biggest real
+# request (60,000 characters of article text) is well under 1 MB.
+MAX_BODY_BYTES = 1_000_000
+TOO_LARGE = {"detail": "This request is too large."}
+
+
+class BodySizeLimit:
+    """Plain ASGI middleware: 413 if the body is (or turns out to be) too big."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        # Fast path: the client told us the size up front.
+        length = dict(scope.get("headers") or []).get(b"content-length")
+        if length is not None:
+            try:
+                too_big = int(length) > self.max_bytes
+            except ValueError:
+                too_big = True  # a garbled Content-Length is not worth parsing
+            if too_big:
+                return await JSONResponse(TOO_LARGE, status_code=413)(scope, receive, send)
+
+            return await self.app(scope, receive, send)
+
+        # Slow path: no Content-Length (chunked upload). Read the body ourselves,
+        # stopping as soon as it passes the limit, then hand the (small) body on.
+        body, more = b"", True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":  # client went away
+                return
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+            if len(body) > self.max_bytes:
+                return await JSONResponse(TOO_LARGE, status_code=413)(scope, receive, send)
+
+        sent = False
+
+        async def replay():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await receive()  # after the body: wait for disconnect as usual
+
+        await self.app(scope, replay, send)
+
+
+app.add_middleware(BodySizeLimit, max_bytes=MAX_BODY_BYTES)
+
+
+# 2.1 Malformed requests get one plain sentence back. FastAPI's default 422 body
+# lists internal field paths and ECHOES THE WHOLE INPUT (a 25,000-character
+# sentence came back in full), which reveals the framework and wastes bandwidth.
+@app.exception_handler(RequestValidationError)
+async def bad_request_shape(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422, content={"detail": "The request wasn't in the expected format."}
+    )
+
 
 # CORS: lets the extension (and a local test page) call this server.
 # For the hackathon we allow everything; lock it down to your extension ID later:
