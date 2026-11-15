@@ -70,6 +70,7 @@
 
   function showItem(item) {
     clearOutline();
+    if (!item) return; // nothing left to show (reading was stopped meanwhile)
     const targets = item.marks || (item.block ? [item.block] : []);
     targets.forEach((el) => el.classList.add("scr-speaking"));
     if (item.block && P.isFocusMode && P.isFocusMode()) P.setActiveBlock(item.block);
@@ -110,6 +111,7 @@
     const myTicket = ++ticket;
     synth().cancel(); // drop whatever was still speaking
     const item = queue[index];
+    if (!item) return stop(); // the queue was emptied (e.g. the voice failed): nothing to say
     showItem(item);
 
     const utterance = new SpeechSynthesisUtterance(item.text);
@@ -135,8 +137,11 @@
       console.warn("[SCR] speech error", e.error);
       stop({ error: errorText(e.error) });
     };
-    synth().speak(utterance);
+    // Set "playing" BEFORE speak(): Chrome on a Mac can report an error (e.g.
+    // "not-allowed" before the page was clicked) synchronously inside speak().
+    // That error calls stop(), and stop() must have the last word.
     setState("playing");
+    synth().speak(utterance);
   }
 
   function start({ scope, rate: r, voice }) {
@@ -171,7 +176,9 @@
   }
 
   function resume() {
-    if (state === "paused") speakCurrent();
+    if (state !== "paused") return;
+    if (queue[index]) speakCurrent();
+    else stop({ force: true }); // nothing left to resume: tell the panel we're stopped
   }
 
   // force: always tell the panel (the Stop button uses it, so the panel can
