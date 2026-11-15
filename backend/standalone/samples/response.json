@@ -1,0 +1,51 @@
+{
+  "highlights": [
+    {
+      "id": "h0",
+      "paragraph": 0,
+      "text": "Riverton will convert four miles of downtown parking lanes into protected bike lanes by next summer, the city council decided on Tuesday.",
+      "role": "main_point",
+      "core": [
+        "Riverton",
+        "will convert four miles of downtown parking lanes",
+        "into protected bike lanes"
+      ]
+    },
+    {
+      "id": "h1",
+      "paragraph": 0,
+      "text": "The 7-2 vote ends a debate that lasted almost two years.",
+      "role": "background",
+      "core": [
+        "The 7-2 vote",
+        "ends a debate"
+      ]
+    },
+    {
+      "id": "h2",
+      "paragraph": 1,
+      "text": "Since 2021, the three streets in the plan have accounted for 41 percent of all cyclist injuries in Riverton, even though they make up less than 5 percent of its road network.",
+      "role": "evidence",
+      "core": [
+        "the three streets in the plan",
+        "have accounted for 41 percent",
+        "of all cyclist injuries"
+      ]
+    },
+    {
+      "id": "h3",
+      "paragraph": 2,
+      "text": "Several downtown shop owners argued that losing 300 parking spaces will drive customers to suburban malls.",
+      "role": "counterpoint",
+      "core": [
+        "Several downtown shop owners",
+        "argued",
+        "losing 300 parking spaces will drive customers to suburban malls"
+      ]
+    }
+  ],
+  "outline": [
+    "h0"
+  ],
+  "cached": false
+}
