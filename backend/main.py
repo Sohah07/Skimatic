@@ -196,7 +196,7 @@ FIX_HINTS = {
 def llm_failure(exc: Exception) -> HTTPException:
     """Turn any LLM exception into an HTTPException with a safe, friendly message."""
     kind = llm.error_kind(exc)
-    log.error("LLM call failed (%s): %r", kind, exc)  # the real reason, server-side only
+    log.error("LLM call failed (%s): %s", kind, llm.describe(exc))  # type/code only, never the text
     if kind in FIX_HINTS:
         log.error("To fix: %s", FIX_HINTS[kind])
     status, detail = ERRORS.get(kind, GENERIC_ERROR)
@@ -334,7 +334,7 @@ async def ask_chunk(chunk: list[Paragraph], key: str) -> list[dict]:
     raw = result.get("highlights", []) if isinstance(result, dict) else []
     highlights = filters.clean_highlights(raw, chunk)
     if highlights:  # an empty answer is a miss worth retrying, not something to remember
-        ANALYZE_CACHE.put(key, highlights)
+        ANALYZE_CACHE.put(key, cache.to_positions(highlights, chunk))  # 7.2: no text kept
     return highlights
 
 
@@ -345,8 +345,11 @@ async def analyze_chunk(chunk, limiter: asyncio.Semaphore, limit_errors: list) -
     analyzing again only pays for that chunk.
     """
     key = chunk_key(chunk)
-    highlights = ANALYZE_CACHE.get(key)
-    was_cached = highlights is not None
+    positions = ANALYZE_CACHE.get(key)
+    was_cached = positions is not None
+    # 7.2 The cache keeps only positions; cut the sentences back out of the
+    # article this request just sent.
+    highlights = cache.from_positions(positions, chunk) if was_cached else None
     if not was_cached:
         async with limiter:
             if limit_errors:  # an earlier chunk hit a 429: more calls would fail too
@@ -391,8 +394,8 @@ async def analyze_in_chunks(paragraphs: list[Paragraph]) -> list[dict]:
         # just send the reader into the same wall.
         raise next((e for e in errors if llm.error_kind(e) in ("quota", "rate_limit")), errors[0])
     if errors:
-        log.warning("analyze: %d of %d chunks failed (%r); returning the rest",
-                    len(errors), len(chunks), errors[0])
+        log.warning("analyze: %d of %d chunks failed (%s); returning the rest",
+                    len(errors), len(chunks), llm.describe(errors[0]))
     log.info("analyze: %d paragraphs, %d chunk(s), %d from cache",
              len(paragraphs), len(chunks), from_cache)
     return merged
@@ -438,7 +441,7 @@ async def ask_simplify(sentence: str, key: str) -> list[str]:
     raw = await llm.simplify(sentence)
     core = filters.clean_core(raw.get("core", []) if isinstance(raw, dict) else [], sentence)
     if core:  # an empty answer is a miss worth retrying, not something to remember
-        SIMPLIFY_CACHE.put(key, core)
+        SIMPLIFY_CACHE.put(key, cache.core_to_positions(core, sentence))  # 7.2: no text kept
     return core
 
 
@@ -448,7 +451,8 @@ async def simplify(req: SimplifyRequest, request: Request):
         raise HTTPException(400, "No sentence was sent.")
     key = cache.make_key(model_name(), prompts.SIMPLIFY_PROMPT, cache.normalize(req.sentence))
 
-    core = SIMPLIFY_CACHE.get(key)
+    positions = SIMPLIFY_CACHE.get(key)
+    core = cache.core_from_positions(positions, req.sentence) if positions is not None else None
     if core is not None:
         log.info("simplify: cache hit")
     else:

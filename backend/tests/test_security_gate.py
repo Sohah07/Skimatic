@@ -168,3 +168,58 @@ def test_daily_budget_returns_daily_limit_message(monkeypatch):
     codes = [client.post("/analyze", json=article(i)).status_code for i in range(3)]
     assert codes == [200, 200, 503]
     assert "daily limit" in client.post("/analyze", json=article(7)).json()["detail"]
+
+
+# --- Security gate item 7: no article text kept or logged ----------------------
+
+import logging  # noqa: E402
+
+MARK = "Zebra-Quokka private diary sentence"
+
+
+def all_cached_values():
+    return list(main.ANALYZE_CACHE._data.values()) + list(main.SIMPLIFY_CACHE._data.values())
+
+
+def test_cache_holds_positions_not_text():
+    client.post("/analyze", json={"paragraphs": [{"id": 0, "text": MARK + " one. Second part."}]})
+    client.post("/simplify", json={"sentence": MARK + " goes here."})
+    assert all_cached_values(), "something should be cached"
+    assert "Zebra" not in repr(all_cached_values())
+
+
+def test_cache_hit_rebuilds_the_same_answer_even_with_different_spacing(monkeypatch):
+    para = "Prices rose sharply in May. Analysts were surprised by the jump."
+    first = client.post("/analyze", json={"paragraphs": [{"id": 0, "text": para}]}).json()
+
+    async def must_not_call(_):
+        raise AssertionError("should have been a cache hit")
+    monkeypatch.setattr(main.llm, "analyze", must_not_call)
+    spaced = para.replace(" sharply", "  sharply")  # same article, different whitespace
+    again = client.post("/analyze", json={"paragraphs": [{"id": 0, "text": spaced}]}).json()
+    assert [h["role"] for h in again["highlights"]] == [h["role"] for h in first["highlights"]]
+    for h in again["highlights"]:
+        assert h["text"] in spaced  # exact characters of THIS request
+
+
+def test_simplify_cache_hit_rebuilds_pieces(monkeypatch):
+    s = "The committee approved the bill on Tuesday."
+    first = client.post("/simplify", json={"sentence": s}).json()
+
+    async def must_not_call(_):
+        raise AssertionError("should have been a cache hit")
+    monkeypatch.setattr(main.llm, "simplify", must_not_call)
+    assert client.post("/simplify", json={"sentence": s}).json() == first
+
+
+def test_error_messages_never_reach_the_log(monkeypatch, caplog):
+    caplog.set_level(logging.DEBUG)
+
+    async def boom(_):
+        raise RuntimeError("upstream said: " + MARK)
+    monkeypatch.setattr(main.llm, "analyze", boom)
+    monkeypatch.setattr(main.llm, "simplify", boom)
+    client.post("/analyze", json={"paragraphs": [{"id": 0, "text": MARK + " here."}]})
+    client.post("/simplify", json={"sentence": MARK + " here."})
+    assert "Zebra" not in caplog.text
+    assert "RuntimeError" in caplog.text  # the team still sees what kind of error it was
