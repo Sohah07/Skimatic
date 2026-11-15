@@ -3,8 +3,10 @@ uvicorn==0.54.0
 pydantic==2.14.3
 python-dotenv==1.2.4
 google-genai==3.3.0
-# Newest version with a prebuilt wheel for Intel Macs; 50.x tries to compile and fails.
-cryptography==48.0.1
+# 48.0.1 (the last version with an Intel-Mac wheel) has published advisories (PYSEC-2026-3552/-3553/-3554),
+# so we use the fixed version. On an Intel Mac it builds from source: install Rust
+# first (https://rustup.rs) or run the prototype on another machine.
+cryptography==50.0.2
 pytest==9.2.0
 pymongo==4.20.0
 # Trusted root certificates for MongoDB's TLS check (python.org Python on macOS ships none).

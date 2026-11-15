@@ -73,12 +73,44 @@ not change. Status and open items: [backend/HANDOFF.md](backend/HANDOFF.md).
 ## Load the extension
 
 1. Chrome → `chrome://extensions` → turn on **Developer mode** (top right).
-2. **Load unpacked** → pick the `extension/` folder.
-3. Pin it, open any article, click the icon → the side panel opens.
+2. **Load unpacked** → pick the `extension/` folder. Chrome 116 or newer.
+3. Pin it, open any article, **click the Skimatic icon on that page** → the side panel opens.
 4. Click **Highlight this article**.
 
+Skimatic can only read a page you pointed it at (see below). If the panel says
+"Skimatic can't read this tab yet", click the toolbar icon while on that page, or press
+**Alt+Shift+H** (highlight), **Alt+Shift+R** (reading view) or **Alt+Shift+F** (focus mode).
+
 After editing extension code, hit the ↻ reload button on `chrome://extensions`
-and refresh the article tab. The backend URL lives at the top of `extension/background.js`.
+and refresh the article tab.
+
+**Deploying the backend:** the backend URL appears in three places that must match:
+`BACKEND_URL` at the top of `extension/background.js`, `host_permissions` and the CSP's
+`connect-src` in `extension/manifest.json` (e.g. `https://your-app.onrender.com/*` and
+`https://your-app.onrender.com`). Keep `http://localhost:8000` only in a dev build. On the
+server, set `EXTENSION_ID` to the extension's ID (from `chrome://extensions`).
 
 Local test page: `cd testing && python3 -m http.server 5500`, then open
 http://localhost:5500/article.html.
+
+### Permissions and security
+
+- **No access to any site by default.** No `<all_urls>`, no `tabs`, no content scripts
+  declared in the manifest. Skimatic gets a tab through Chrome's `activeTab` when you click
+  its toolbar icon or use one of its keyboard shortcuts on that tab, and only until the tab
+  navigates. The page scripts are injected into that tab only then.
+- **"Use on every website"** (Reading comfort card) is opt-in: Chrome asks to let Skimatic
+  read all sites (`optional_host_permissions`), then your reading settings apply on every page.
+  Turning it off gives the permission back.
+- The only host permission granted at install is the backend's own origin.
+- The service worker only obeys the side panel; content scripts may only ask to simplify one
+  of the highlights the backend returned for their own tab (by index, rate-limited). Messages
+  are checked field by field. Web pages can't message the extension (no `externally_connectable`).
+- The reading view rebuilds the article from an allowlist of tags and attributes; page clicks
+  made by scripts and look-alike `<mark>`s made by the page are ignored.
+- Extension pages have a strict CSP (`script-src 'self'`, no inline styles, `connect-src` = backend).
+- Fonts are web-accessible with `use_dynamic_url`, so sites can't probe for Skimatic.
+- No API keys or secrets in the extension; the backend keeps the Gemini key.
+
+Security + regression tests (real Chromium; start the backend with `MOCK_LLM=1` first):
+`NODE_PATH=$(npm root -g) node testing/security/run.js`

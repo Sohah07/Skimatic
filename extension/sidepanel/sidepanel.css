@@ -81,6 +81,10 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: .625rem; min-width: 0; }
 .brand-mark { display: grid; gap: 3px; width: 18px; flex: none; }
 .brand-mark i { display: block; height: 4px; border-radius: 2px; }
+/* Colors here, not in style="" attributes: the extension CSP (manifest.json) blocks inline styles. */
+.brand-mark i:nth-child(1) { background: var(--swatch-1); }
+.brand-mark i:nth-child(2) { background: var(--swatch-2); }
+.brand-mark i:nth-child(3) { background: var(--swatch-3); }
 .brand-mark i:nth-child(2) { width: 70%; }
 .brand-mark i:nth-child(3) { width: 85%; }
 

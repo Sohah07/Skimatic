@@ -7,6 +7,9 @@ self.SCR_ROLES = [
   { key: "counter",    label: "Other side", hint: "Caveats, limits and objections",             defaultColor: "#e8a0bf" },
 ];
 
+// The only role names we accept from the backend or the page (anything else is dropped).
+self.SCR_ROLE_KEYS = self.SCR_ROLES.map((r) => r.key);
+
 // Curated swatches offered in the color picker. Chosen to stay readable as a light
 // wash on both white and dark pages. UI teammate: re-check these in a colorblind
 // simulator (e.g. Chrome DevTools > Rendering > Emulate vision deficiencies).

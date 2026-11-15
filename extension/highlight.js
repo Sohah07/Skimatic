@@ -11,8 +11,20 @@
 // sharing the same data-scr-id. Wrapping inline text never changes the page layout.
 
 (function () {
+  if (self.SCR) return; // guard against double injection (keeps the set of our marks)
   const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "INPUT", "SELECT", "OPTION", "SVG", "CANVAS", "IFRAME"]);
   let nextId = 1;
+  // Every <mark> we create, with its id and role. A page can add its own
+  // <mark class="scr-hl" data-scr-role=...> or edit ours, so we never trust the class
+  // name or the data-* attributes: only marks in this map are ours, and their id/role
+  // come from here. (It lives in the content script's isolated world, out of the
+  // page's reach. The data-* attributes are only for content.css.)
+  const ownMarks = new WeakMap(); // mark -> { id, role }
+  const isOwnMark = (el) => ownMarks.has(el);
+  const idOf = (mark) => (ownMarks.get(mark) || {}).id;
+  const roleOf = (mark) => (ownMarks.get(mark) || {}).role;
+  // Our marks under `root`, in document order.
+  const marksIn = (root = document.body) => [...root.querySelectorAll("mark.scr-hl")].filter(isOwnMark);
 
   const normalize = (s) => s.replace(/\s+/g, " ").trim();
 
@@ -65,6 +77,7 @@
     if (end < node.length) node.splitText(end);
     const target = start > 0 ? node.splitText(start) : node;
     const mark = document.createElement("mark");
+    ownMarks.set(mark, { id, role: role || "" });
     mark.className = "scr-hl";
     mark.dataset.scrId = id;
     if (role) mark.dataset.scrRole = role;
@@ -106,12 +119,13 @@
 
   function clearHighlights(root = document.body) {
     const parents = new Set();
-    root.querySelectorAll("mark.scr-hl").forEach((mark) => {
+    marksIn(root).forEach((mark) => {
+      ownMarks.delete(mark);
       parents.add(mark.parentNode);
       mark.replaceWith(...mark.childNodes);
     });
     parents.forEach((p) => p.normalize()); // merge the split text nodes back
   }
 
-  self.SCR = { highlight, highlightAll, clearHighlights, normalize };
+  self.SCR = { highlight, highlightAll, clearHighlights, normalize, isOwnMark, marksIn, idOf, roleOf };
 })();
