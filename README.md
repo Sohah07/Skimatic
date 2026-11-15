@@ -43,7 +43,7 @@ Why each feature exists, and what we deliberately left out (e.g. "dyslexia fonts
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # server + test tools (Render installs requirements.txt only)
 cp .env.example .env               # then paste your GEMINI_API_KEY into .env
 uvicorn main:app --reload --port 8000
 ```
