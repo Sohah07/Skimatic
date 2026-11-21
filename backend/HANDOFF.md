@@ -63,7 +63,7 @@ Blair's spec asks for an in-memory dict. Use that. I have a working MongoDB Atla
 - `/simplify` speed (~4 s; the target is ~2 s).
 - Chunking long articles (Blair: ~20 paragraphs per call, parallel with `asyncio.gather`, merge keeping ids). Needed for 60+ paragraph pages or the JSON truncates.
 - Deploy to Render.
-- The security gate items in `CLAUDE.md`, which should be finished before the demo.
+- The remaining security gate items, which should be finished before the demo.
 
 ## Questions
 
