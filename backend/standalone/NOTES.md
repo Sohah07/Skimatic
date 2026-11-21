@@ -1,7 +1,6 @@
 # Semblock backend: learning log
 
 ## File map
-- `CLAUDE.md`: instructions Claude reads every session.
 - `NOTES.md`: this learning log.
 - `.gitignore`: list of files git must never track (`.env`, `.venv/`, caches).
 - `backend/db.py`: MongoDB cache: `article_hash`, `get_cached`, `save`, plus the 7-day TTL index. Any DB problem means "no cache" (with a 60s cooldown), never an error.
@@ -230,7 +229,7 @@ Commands (from `backend/`, venv active):
 - `python -c "from dotenv import dotenv_values; ..."`: shows exactly how python-dotenv reads a value (it strips the space after `=`).
 
 ### Milestone 3, Step 3: `prompts.py`
-We moved the prompt into `backend/prompts.py` as one template constant, `ANALYZE_PROMPT`, with an `{article}` placeholder, and added CLAUDE.md's "roughly 20% overall" rule to it. The script now imports it, so there is one source of truth; it still returns valid JSON, and braces inside article text can't break the template.
+We moved the prompt into `backend/prompts.py` as one template constant, `ANALYZE_PROMPT`, with an `{article}` placeholder, and added our "roughly 20% overall" highlight rule to it. The script now imports it, so there is one source of truth; it still returns valid JSON, and braces inside article text can't break the template.
 
 Commands (from `backend/`, venv active):
 - `python -c "from prompts import ANALYZE_PROMPT; ..."`: prints or tests the filled-in prompt without calling Gemini (free, instant).
